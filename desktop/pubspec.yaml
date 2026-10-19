@@ -1,0 +1,22 @@
+name: book_generator_desktop
+description: Book Generator - Meta Hawladar Team. Turns a topic into a finished, uploadable ebook.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.3.2
+  file_picker: ^8.1.6
+  pdf: ^3.11.2
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
