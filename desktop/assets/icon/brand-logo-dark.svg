@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560">
+  <defs>
+    <linearGradient id="gBadge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6D28D9"/>
+      <stop offset="0.55" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="gBook" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E0E7FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark card background (remove for transparent use) -->
+  <rect x="0" y="0" width="900" height="560" rx="28" fill="#111827"/>
+
+  <!-- Icon badge -->
+  <rect x="330" y="36" width="240" height="240" rx="56" fill="url(#gBadge)"/>
+
+  <!-- Spark star above the book -->
+  <path d="M450,74 C452.6,86.5 456.2,90.2 468.5,92.8 C456.2,95.4 452.6,99 450,111.5 C447.4,99 443.8,95.4 431.5,92.8 C443.8,90.2 447.4,86.5 450,74 Z" fill="#FCD34D"/>
+  <circle cx="408" cy="86" r="4.5" fill="#FDE68A" opacity="0.85"/>
+  <circle cx="494" cy="100" r="3.2" fill="#FDE68A" opacity="0.6"/>
+
+  <!-- Open book -->
+  <path d="M450,140 C418,128 386,124 356,128 L356,216 C386,212 418,216 450,228 Z" fill="url(#gBook)"/>
+  <path d="M450,140 C482,128 514,124 544,128 L544,216 C514,212 482,216 450,228 Z" fill="url(#gBook)"/>
+  <rect x="448.2" y="140" width="3.6" height="88" fill="#C7D2FE"/>
+  <g stroke="#6366F1" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.5">
+    <path d="M370,150 C392,146.5 412,149 430,154"/>
+    <path d="M370,168 C392,164.5 412,167 430,172"/>
+    <path d="M470,154 C488,149 508,146.5 530,150"/>
+    <path d="M470,172 C488,167 508,164.5 530,168"/>
+  </g>
+  <!-- Under-book base line -->
+  <path d="M352,232 C400,240 500,240 548,232" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.55"/>
+
+  <!-- Wordmark -->
+  <text x="450" y="398" text-anchor="middle" font-family="Inter, 'Segoe UI', system-ui, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="3" fill="#F9FAFB">BOOK GENERATOR</text>
+
+  <!-- Divider -->
+  <line x1="330" y1="432" x2="570" y2="432" stroke="#374151" stroke-width="1.5"/>
+  <rect x="445" y="427" width="10" height="10" transform="rotate(45 450 432)" fill="#818CF8"/>
+
+  <!-- Tagline -->
+  <text x="450" y="476" text-anchor="middle" font-family="Inter, 'Segoe UI', system-ui, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="8" fill="#9CA3AF">META HAWLADAR TEAM</text>
+</svg>
