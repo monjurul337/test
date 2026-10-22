@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "appearance": {
+    "theme": "obsidian",
+    "accent": "brass",
+    "cornerRadiusDp": 18,
+    "tabStrip": "rail",
+    "glassBlur": true,
+    "reduceMotion": false,
+    "fontScale": 1.0
+  },
+  "search": {
+    "defaultEngineId": "ddg",
+    "suggestionsEnabled": false
+  },
+  "privacy": {
+    "maskFingerprint": true,
+    "blockWebRtc": true,
+    "blockThirdPartyCookies": true,
+    "stripTrackingParams": true,
+    "forceHttps": true,
+    "doNotTrack": true,
+    "spoofTimezoneFromExit": true,
+    "blockTrackerHosts": true
+  },
+  "tunnel": {
+    "killSwitch": true,
+    "tunnelDns": true,
+    "autoReconnect": true,
+    "autoConnectConfigId": null,
+    "showPublicIpBadge": true,
+    "splitTunnelExclusions": []
+  },
+  "extensions": {
+    "enabled": true,
+    "extraSearchPaths": [],
+    "disabledIds": [],
+    "allowFileAccess": false
+  },
+  "profiles": [
+    {
+      "id": "default",
+      "name": "Personal",
+      "colorTag": 13279271,
+      "fingerprintSeed": 1357443300,
+      "persistCookies": true,
+      "pinnedTunnelId": null,
+      "startupUrls": []
+    },
+    {
+      "id": "work",
+      "name": "Work",
+      "colorTag": 5008895,
+      "fingerprintSeed": 884412771,
+      "persistCookies": true,
+      "pinnedTunnelId": null,
+      "startupUrls": []
+    }
+  ],
+  "featureFlags": {
+    "ui.commandPalette": true,
+    "ui.readerMode": true,
+    "ui.splitView": true,
+    "net.quicDisabled": true,
+    "ext.mv3ServiceWorkers": true,
+    "privacy.perProfileFingerprint": true
+  }
+}
