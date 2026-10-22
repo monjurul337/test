@@ -1,0 +1,235 @@
+name: Build All Apps
+
+# ============================================================================
+# One run builds the Android APK and the desktop app (Windows / Linux / macOS).
+# This is a single Kotlin Multiplatform Gradle project - unlike the Flutter
+# layout, there is no separate `app/` and `desktop/` folder:
+#
+#   SoftizenceBrowser/
+#     .github/workflows/build-all.yml   <- this file
+#     composeApp/                        <- androidMain + desktopMain + commonMain
+#     gradle/libs.versions.toml
+#
+# GitHub -> Actions -> "Build All Apps" -> Run workflow -> pick targets.
+# Tag a version to publish one Release with everything attached:
+#   git tag v1.0.0 && git push --tags
+#
+# Android signing secrets (Settings -> Secrets and variables -> Actions):
+#   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+# Without them a throwaway keystore is generated so the APK is installable for
+# testing, but users cannot update in place. Add real secrets before shipping.
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "What to build"
+        type: choice
+        default: android+windows
+        options:
+          - android+windows
+          - android
+          - windows
+          - all
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  BUILD_PROFILE: template
+  JAVA_VERSION: "17"
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  # --------------------------------------------------------------- Android
+  android:
+    name: Android APK
+    if: ${{ github.event_name == 'push' || inputs.targets == 'android+windows' || inputs.targets == 'android' || inputs.targets == 'all' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Prepare signing keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KS_PATH="$RUNNER_TEMP/release.keystore"
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "Using keystore from repository secrets."
+            echo "${KEYSTORE_BASE64}" | base64 --decode > "$KS_PATH"
+            echo "KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${KEY_ALIAS}"                 >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${KEY_PASSWORD}"           >> "$GITHUB_ENV"
+            echo "signed_with=secrets" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No KEYSTORE_BASE64 secret found - generating a throwaway keystore."
+            keytool -genkeypair -v \
+              -keystore "$KS_PATH" -storetype PKCS12 \
+              -alias softizence -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass tempstorepass -keypass tempstorepass \
+              -dname "CN=Softizence CI, OU=CI, O=Softizence, C=US"
+            echo "KEYSTORE_PASSWORD=tempstorepass" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=softizence"            >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=tempstorepass"      >> "$GITHUB_ENV"
+            echo "signed_with=throwaway" >> "$GITHUB_OUTPUT"
+          fi
+          echo "KEYSTORE_PATH=$KS_PATH" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew 2>/dev/null || true
+          ./gradlew --no-daemon --stacktrace \
+            -Psoftizence.profile=${BUILD_PROFILE} \
+            :composeApp:assembleRelease
+
+      - name: Collect APK
+        id: apk
+        run: |
+          set -euo pipefail
+          APK=$(find composeApp/build/outputs/apk/release -name '*.apk' | head -n 1)
+          [ -n "$APK" ] || { echo "::error::No APK produced"; exit 1; }
+          VERSION=$(grep -oP 'softizence\.version=\K.*' gradle.properties)
+          OUT="Softizence-${BUILD_PROFILE}-v${VERSION}-release.apk"
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp "$APK" "$RUNNER_TEMP/dist/$OUT"
+          echo "path=$RUNNER_TEMP/dist/$OUT" >> "$GITHUB_OUTPUT"
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$APKSIGNER" verify --print-certs "${{ steps.apk.outputs.path }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------- Desktop
+  desktop:
+    name: Desktop ${{ matrix.label }}
+    if: ${{ github.event_name == 'push' || inputs.targets == 'android+windows' || inputs.targets == 'windows' || inputs.targets == 'all' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            label: Windows x64
+            task: packageReleaseMsi
+            glob: "*.msi"
+            always: true
+          - os: ubuntu-latest
+            label: Linux x64
+            task: packageReleaseDeb
+            glob: "*.deb"
+            always: false
+          - os: macos-14
+            label: macOS arm64
+            task: packageReleaseDmg
+            glob: "*.dmg"
+            always: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ matrix.always || github.event_name == 'push' || inputs.targets == 'all' }}
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        if: ${{ matrix.always || github.event_name == 'push' || inputs.targets == 'all' }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        if: ${{ matrix.always || github.event_name == 'push' || inputs.targets == 'all' }}
+        uses: gradle/actions/setup-gradle@v4
+
+      # JCEF needs GTK/NSS headers present when the installer is assembled on Linux.
+      - name: Linux packaging dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' && (github.event_name == 'push' || inputs.targets == 'all') }}
+        run: sudo apt-get update && sudo apt-get install -y fakeroot binutils libgtk-3-0 libnss3
+
+      - name: Build native distribution
+        if: ${{ matrix.always || github.event_name == 'push' || inputs.targets == 'all' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew 2>/dev/null || true
+          ./gradlew --no-daemon --stacktrace \
+            -Psoftizence.profile=${BUILD_PROFILE} \
+            :composeApp:${{ matrix.task }}
+
+      - name: Collect installer
+        id: pkg
+        if: ${{ matrix.always || github.event_name == 'push' || inputs.targets == 'all' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oE 'softizence\.version=.*' gradle.properties | cut -d= -f2)
+          FILE=$(find composeApp/build/compose/binaries -name '${{ matrix.glob }}' | head -n 1)
+          [ -n "$FILE" ] || { echo "::error::No installer produced"; exit 1; }
+          EXT="${FILE##*.}"
+          OUT="Softizence-${BUILD_PROFILE}-$(echo '${{ matrix.label }}' | tr ' ' '-')-v${VERSION}.${EXT}"
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp "$FILE" "$RUNNER_TEMP/dist/$OUT"
+          echo "path=$RUNNER_TEMP/dist/$OUT" >> "$GITHUB_OUTPUT"
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.always || github.event_name == 'push' || inputs.targets == 'all' }}
+        with:
+          name: ${{ steps.pkg.outputs.name }}
+          path: ${{ steps.pkg.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------- Release
+  release:
+    name: Publish Release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
