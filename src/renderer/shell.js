@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const tm = t => { const d = new Date(t); return d.toLocaleTimeString([], { hour12: false }); };
 
-let S = { tabs: [], activeId: null, settings: {}, profiles: [], meta: {}, vpnStatus: {}, vpnStore: {}, extensions: [] };
+let S = { tabs: [], activeId: null, settings: {}, profiles: [], meta: {}, vpnStatus: {}, vpnStore: {}, extensions: [], bookmarks: [], history: [] };
 let page = null; // "settings" | null
 let editingUrl = false;
 let setSec = "vpn";
@@ -17,11 +17,40 @@ $("bHome").innerHTML = icon("home", 15);
 $("bSettings").innerHTML = icon("settings", 16);
 if ($("searchIcon")) $("searchIcon").innerHTML = icon("search", 14);
 if ($("bCopyUrl")) $("bCopyUrl").innerHTML = icon("copy", 13);
+
+function updateBookmarkStar() {
+  const star = $("bStar");
+  if (!star) return;
+  const t = cur();
+  const isHome = t && t.url && t.url.includes("home.html");
+  if (!t || !t.url || isHome) {
+    star.classList.add("hide");
+    return;
+  }
+  star.classList.remove("hide");
+  const isBookmarked = (S.bookmarks || []).some(b => b.url === t.url);
+  if (isBookmarked) {
+    star.classList.add("starred");
+    star.innerHTML = icon("starFilled", 15);
+    star.title = "Remove bookmark";
+  } else {
+    star.classList.remove("starred");
+    star.innerHTML = icon("star", 15);
+    star.title = "Bookmark this page (Ctrl+D)";
+  }
+}
+
 if ($("bStar")) {
   $("bStar").innerHTML = icon("star", 15);
-  $("bStar").onclick = () => {
-    $("bStar").classList.toggle("starred");
-    toast($("bStar").classList.contains("starred") ? "Page bookmarked" : "Bookmark removed");
+  $("bStar").onclick = async () => {
+    const t = cur();
+    const isHome = t && t.url && t.url.includes("home.html");
+    if (!t || !t.url || isHome) return;
+    const res = await app.bookmarksToggle({ url: t.url, title: t.title, favicon: t.favicon });
+    if (res && res.bookmarks) S.bookmarks = res.bookmarks;
+    updateBookmarkStar();
+    if (page === "settings" && setSec === "bookmarks") renderSettings();
+    toast(res && res.bookmarked ? "Bookmarked page ⭐" : "Bookmark removed");
   };
 }
 document.querySelector('[data-w="min"]').innerHTML = icon("min", 13);
@@ -129,6 +158,7 @@ function renderToolbar() {
     const z = Math.round((t.zoom || 1) * 100);
     $("zoomBadge").textContent = z + "%"; $("zoomBadge").classList.toggle("hide", z === 100);
   }
+  updateBookmarkStar();
   renderVpnPill();
   renderStatus();
 }
@@ -198,6 +228,9 @@ function renderSettings() {
   const secs = [
     ["vpn", "shield", "Proton WireGuard"],
     ["extensions", "puzzle", "Extensions"],
+    ["bookmarks", "bookmark", "Bookmarks"],
+    ["history", "history", "History"],
+    ["cleardata", "trash", "Clear Data"],
     ["general", "sliders", "General"],
     ["profiles", "user", "Profiles & proxy"],
     ["identity", "shield", "Identity & privacy"],
@@ -320,16 +353,20 @@ function renderSettings() {
                   <b style="font-size:13.5px;color:var(--tx-primary);">${esc(ext.name)}</b>
                   <span class="badge dim" style="font-size:10.5px;">v${esc(ext.version)}</span>
                   ${ext.isBuiltin ? `<span class="badge pri" style="font-size:10px;">Built-in</span>` : ""}
+                  ${ext.enabled ? `<span class="badge ok" style="font-size:10px;">Active</span>` : `<span class="badge dim" style="font-size:10px;background:rgba(239,68,68,0.12);color:var(--bad);">Off</span>`}
                   ${!ext.existsOnDisk ? `<span class="badge bad" style="font-size:10px;">Folder missing</span>` : ""}
                 </div>
                 <div style="font-size:11.5px;color:var(--tx-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(ext.description || ext.path)}">${esc(ext.description || ext.path)}</div>
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:14px;flex:none;margin-left:16px;">
-              <label class="sw" title="${ext.enabled ? "Disable extension" : "Enable extension"}">
-                <input type="checkbox" class="ext-toggle" data-id="${esc(ext.id)}" ${ext.enabled ? "checked" : ""}>
-                <span></span>
-              </label>
+            <div style="display:flex;align-items:center;gap:12px;flex:none;margin-left:16px;">
+              <div style="display:flex;align-items:center;gap:8px;padding:3px 10px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);">
+                <span style="font-size:11.5px;font-weight:600;color:${ext.enabled ? 'var(--ok)' : 'var(--tx-muted)'};">${ext.enabled ? 'Active' : 'Off'}</span>
+                <label class="sw" title="${ext.enabled ? "Turn Off Extension" : "Turn On / Activate Extension"}">
+                  <input type="checkbox" class="ext-toggle" data-id="${esc(ext.id)}" ${ext.enabled ? "checked" : ""}>
+                  <span></span>
+                </label>
+              </div>
               ${ext.isBuiltin ? `
                 <span style="font-size:11px;color:var(--tx-muted);padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:6px;border:1px solid var(--border-subtle);">Permanent</span>
               ` : `
@@ -341,17 +378,154 @@ function renderSettings() {
       </div>
     `;
   }
+  if (setSec === "bookmarks") {
+    const list = S.bookmarks || [];
+    body = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <h3 style="margin:0;">Bookmarks</h3>
+            <span class="badge pri" style="font-size:11px;">${list.length} saved</span>
+          </div>
+          <p class="sub" style="margin:4px 0 0;">Quick access to your saved pages and Play Books tools.</p>
+        </div>
+        <button class="btn pri" id="bmAddManual">${icon("plus", 14)} Add Bookmark</button>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <input class="txt" id="bmSearch" placeholder="Filter bookmarks by title or URL..." style="width:100%;">
+      </div>
+
+      <div class="card" id="bmListContainer">
+        ${!list.length ? `
+          <div style="padding:36px 20px;text-align:center;color:var(--tx-muted);">
+            <div style="font-size:36px;margin-bottom:8px;opacity:0.6;">⭐</div>
+            <div style="font-size:14px;font-weight:600;color:var(--tx-secondary);margin-bottom:4px;">No bookmarks yet</div>
+            <div style="font-size:12px;">Click the star icon in the address bar to bookmark any page.</div>
+          </div>
+        ` : list.map(b => `
+          <div class="row bm-item" data-url="${esc(b.url)}" data-title="${esc(b.title || '')}" style="padding:12px 18px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;">
+            <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;" class="bm-open-row" data-url="${esc(b.url)}">
+              <div style="width:32px;height:32px;border-radius:8px;background:rgba(251,191,36,0.12);color:#fbbf24;display:flex;align-items:center;justify-content:center;flex:none;">
+                ${b.favicon ? `<img src="${esc(b.favicon)}" style="width:16px;height:16px;border-radius:2px;" onerror="this.replaceWith(icon('bookmark', 15))">` : icon("bookmark", 15)}
+              </div>
+              <div style="min-width:0;flex:1;">
+                <div style="font-size:13.5px;font-weight:600;color:var(--tx-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(b.title || b.url)}">${esc(b.title || b.url)}</div>
+                <div style="font-size:11.5px;color:var(--tx-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(b.url)}">${esc(b.url)}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex:none;margin-left:14px;">
+              <button class="btn bm-open" data-url="${esc(b.url)}" title="Open in new tab">${icon("external", 13)} Open</button>
+              <button class="btn danger bm-remove" data-id="${esc(b.id)}" title="Delete bookmark">${icon("trash", 13)}</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+  if (setSec === "history") {
+    const list = S.history || [];
+    body = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <h3 style="margin:0;">Browsing History</h3>
+            <span class="badge dim" style="font-size:11px;">${list.length} pages</span>
+          </div>
+          <p class="sub" style="margin:4px 0 0;">Pages you have visited in this browser.</p>
+        </div>
+        ${list.length ? `<button class="btn danger" id="histClearAll">${icon("trash", 14)} Clear History</button>` : ""}
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <input class="txt" id="histSearch" placeholder="Filter history by page title or URL..." style="width:100%;">
+      </div>
+
+      <div class="card" id="histListContainer" style="max-height:480px;overflow-y:auto;">
+        ${!list.length ? `
+          <div style="padding:36px 20px;text-align:center;color:var(--tx-muted);">
+            <div style="font-size:36px;margin-bottom:8px;opacity:0.6;">🕒</div>
+            <div style="font-size:14px;font-weight:600;color:var(--tx-secondary);margin-bottom:4px;">No browsing history yet</div>
+            <div style="font-size:12px;">Web pages you visit will appear here.</div>
+          </div>
+        ` : list.map(h => {
+          const d = new Date(h.time || Date.now());
+          const timeStr = d.toLocaleDateString([], { month: "short", day: "numeric" }) + " · " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          return `
+            <div class="row hist-item" data-url="${esc(h.url)}" data-title="${esc(h.title || '')}" style="padding:11px 18px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;">
+              <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;" class="hist-open-row" data-url="${esc(h.url)}">
+                <div style="width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;flex:none;color:var(--tx-muted);">
+                  ${h.favicon ? `<img src="${esc(h.favicon)}" style="width:15px;height:15px;border-radius:2px;" onerror="this.replaceWith(icon('globe', 14))">` : icon("globe", 14)}
+                </div>
+                <div style="min-width:0;flex:1;">
+                  <div style="font-size:13px;font-weight:500;color:var(--tx-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(h.title || h.url)}">${esc(h.title || h.url)}</div>
+                  <div style="font-size:11px;color:var(--tx-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(h.url)}">${esc(h.url)}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex:none;margin-left:14px;">
+                <span style="font-size:11px;color:var(--tx-muted);white-space:nowrap;">${timeStr}</span>
+                <button class="btn hist-open" data-url="${esc(h.url)}" title="Open in new tab">${icon("external", 13)}</button>
+                <button class="btn danger hist-remove" data-id="${esc(h.id)}" title="Remove from history">${icon("x", 12)}</button>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+  if (setSec === "cleardata") body = `
+    <h3>Clear Browsing Data</h3>
+    <p class="sub">Clear cache, cookies, local storage, and history across all browser profiles and sessions.</p>
+    
+    <div class="card">
+      <div class="row">
+        <div class="l">
+          <b>Browsing Cache & Temporary Files</b>
+          <small>Frees up memory and disk space by clearing cached web pages and images.</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="clrOptCache" checked><span></span></label>
+      </div>
+      <div class="row">
+        <div class="l">
+          <b>Cookies & Site Data</b>
+          <small>Logs you out of web accounts and clears saved site session cookies.</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="clrOptCookies" checked><span></span></label>
+      </div>
+      <div class="row">
+        <div class="l">
+          <b>Local Storage & IndexedDB</b>
+          <small>Removes offline app data, cached databases, and web storage.</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="clrOptStorage" checked><span></span></label>
+      </div>
+      <div class="row">
+        <div class="l">
+          <b>Browsing History</b>
+          <small>Clears the recorded list of visited pages and addresses.</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="clrOptHistory" checked><span></span></label>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;align-items:center;margin-top:10px;">
+      <button class="btn danger" id="btnClearBrowserData" style="display:flex;align-items:center;gap:8px;padding:9px 18px;font-weight:600;">
+        ${icon("trash", 15)} Clear Selected Data
+      </button>
+      <span style="font-size:12px;color:var(--tx-muted);">Wipes selected storage immediately.</span>
+    </div>
+  `;
   if (setSec === "general") body = `
     <h3>General</h3><p class="sub">Startup, notifications and window behaviour.</p>
     <div class="card">
       ${row("Home page", "Opened by new tabs and the Home button.", `<input class="txt wide" id="sHome" value="${esc(s.homeUrl || "https://play.google.com/books/publish/u/0/")}">`)}
       ${row("Restore tabs on start", "Reopen the tabs that were open when the app was closed.", sw("sRestore", s.restoreTabs))}
       ${row("Desktop notifications", "Windows notification when a target center is selected or payment page is reached.", sw("sNotify", s.notify))}
-      ${row("Flash taskbar on alert", "Flash the taskbar button when the window is in the background.", sw("sFlash", s.flashTaskbar))}
       ${row("Always on top", "Keep the window above other windows.", sw("sTop", s.alwaysOnTop))}
       ${row("Default zoom", "Zoom used for new tabs.", `<select class="txt" id="sZoom">${[0.8, 0.9, 1, 1.1, 1.25].map(z => `<option value="${z}" ${Number(s.zoom) === z ? "selected" : ""}>${Math.round(z * 100)}%</option>`).join("")}</select>`)}
     </div>
     <div class="card">
+      ${row("Clear browsing data", "Quickly wipe cache, cookies, and local data.", `<button class="btn danger" id="sQuickClearData">${icon("trash", 14)} Clear Data</button>`)}
       ${row("App data folder", esc(S.meta.dataPath || ""), `<button class="btn" id="sOpenData">${icon("folder", 14)} Open</button>`)}
     </div>
     <button class="btn pri" id="sSave">${icon("check", 14)} Save</button>`;
@@ -503,9 +677,135 @@ function bindSettings() {
       const enabled = input.checked;
       const res = await app.extToggle(id, enabled);
       if (res && res.extensions) S.extensions = res.extensions;
-      toast(enabled ? "Extension enabled" : "Extension disabled");
+      renderSettings();
+      toast(enabled ? "Extension Activated (Active)" : "Extension Turned Off");
     };
   });
+
+  // Bookmarks handlers
+  if (v("bmAddManual")) v("bmAddManual").onclick = async () => {
+    const t = cur();
+    const defaultUrl = t && t.url && t.url.startsWith("http") ? t.url : "https://";
+    const defaultTitle = t && t.title && t.title !== "Loading…" ? t.title : "";
+    const url = prompt("Enter bookmark URL:", defaultUrl);
+    if (!url || !url.trim() || url === "https://") return;
+    const title = prompt("Enter bookmark title:", defaultTitle || url.trim()) || url.trim();
+    const res = await app.bookmarksAdd({ url: url.trim(), title: title.trim(), favicon: (t && t.url === url.trim()) ? t.favicon : "" });
+    if (res) S.bookmarks = res;
+    updateBookmarkStar();
+    renderSettings();
+    toast("Bookmark added ⭐");
+  };
+
+  if (v("bmSearch")) v("bmSearch").oninput = (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    P.querySelectorAll(".bm-item").forEach(item => {
+      const match = !q || item.dataset.url.toLowerCase().includes(q) || item.dataset.title.toLowerCase().includes(q);
+      item.style.display = match ? "flex" : "none";
+    });
+  };
+
+  P.querySelectorAll(".bm-open, .bm-open-row").forEach(el => {
+    el.onclick = (e) => {
+      if (e.target.closest(".bm-remove")) return;
+      const url = el.dataset.url;
+      if (!url) return;
+      closePage();
+      app.overlay(false);
+      app.newTab({ url });
+    };
+  });
+
+  P.querySelectorAll(".bm-remove").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const res = await app.bookmarksRemove(id);
+      if (res) S.bookmarks = res;
+      updateBookmarkStar();
+      renderSettings();
+      toast("Bookmark removed");
+    };
+  });
+
+  // History handlers
+  if (v("histSearch")) v("histSearch").oninput = (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    P.querySelectorAll(".hist-item").forEach(item => {
+      const match = !q || item.dataset.url.toLowerCase().includes(q) || item.dataset.title.toLowerCase().includes(q);
+      item.style.display = match ? "flex" : "none";
+    });
+  };
+
+  P.querySelectorAll(".hist-open, .hist-open-row").forEach(el => {
+    el.onclick = (e) => {
+      if (e.target.closest(".hist-remove")) return;
+      const url = el.dataset.url;
+      if (!url) return;
+      closePage();
+      app.overlay(false);
+      app.newTab({ url });
+    };
+  });
+
+  P.querySelectorAll(".hist-remove").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const res = await app.historyRemove(id);
+      if (res) S.history = res;
+      renderSettings();
+      toast("History entry removed");
+    };
+  });
+
+  if (v("histClearAll")) v("histClearAll").onclick = async () => {
+    if (confirm("Clear all browsing history?")) {
+      await app.historyClear();
+      S.history = [];
+      renderSettings();
+      toast("Browsing history cleared");
+    }
+  };
+
+  if (v("btnClearBrowserData")) v("btnClearBrowserData").onclick = async () => {
+    const cache = v("clrOptCache") ? v("clrOptCache").checked : true;
+    const cookies = v("clrOptCookies") ? v("clrOptCookies").checked : true;
+    const storage = v("clrOptStorage") ? v("clrOptStorage").checked : true;
+    const history = v("clrOptHistory") ? v("clrOptHistory").checked : true;
+
+    if (!cache && !cookies && !storage && !history) {
+      toast("Please select at least one item to clear.");
+      return;
+    }
+
+    if (confirm("Are you sure you want to clear the selected browser data?")) {
+      v("btnClearBrowserData").disabled = true;
+      const res = await app.clearBrowserData({ cache, cookies, storage, history });
+      v("btnClearBrowserData").disabled = false;
+      if (history) S.history = [];
+      if (res && res.ok) {
+        renderSettings();
+        toast("Browsing data cleared successfully!");
+      } else {
+        toast("Failed to clear data: " + ((res && res.error) || "unknown error"));
+      }
+    }
+  };
+
+  if (v("sQuickClearData")) v("sQuickClearData").onclick = async () => {
+    if (confirm("Clear all cache, cookies, and browsing storage now?")) {
+      v("sQuickClearData").disabled = true;
+      const res = await app.clearBrowserData({ cache: true, cookies: true, storage: true, history: true });
+      v("sQuickClearData").disabled = false;
+      S.history = [];
+      if (res && res.ok) {
+        toast("All browsing data cleared successfully!");
+      } else {
+        toast("Failed to clear data");
+      }
+    }
+  };
 
   P.querySelectorAll(".ext-remove").forEach(btn => {
     btn.onclick = async () => {
@@ -525,7 +825,7 @@ function bindSettings() {
   if (v("sSave")) v("sSave").onclick = async () => {
     const s = {};
     if (v("sHome")) Object.assign(s, { homeUrl: v("sHome").value.trim() || "https://play.google.com/books/publish/u/0/", restoreTabs: v("sRestore").checked,
-      notify: v("sNotify").checked, flashTaskbar: v("sFlash").checked, alwaysOnTop: v("sTop").checked, zoom: Number(v("sZoom").value) });
+      notify: v("sNotify").checked, alwaysOnTop: v("sTop").checked, zoom: Number(v("sZoom").value) });
     if (v("sUaMode")) Object.assign(s, { uaMode: v("sUaMode").value, customUA: v("sUa").value.trim(), acceptLanguage: v("sLang").value.trim() || "en-US,en;q=0.9",
       webrtcProtect: v("sRtc").checked, blockTrackers: v("sTrk").checked });
     const r = await app.saveSettings(s);
@@ -572,6 +872,8 @@ app.init().then(d => {
   S.vpnStatus = d.vpnStatus || {};
   S.vpnStore = d.vpnStore || {};
   S.extensions = d.extensions || [];
+  S.bookmarks = d.bookmarks || [];
+  S.history = d.history || [];
   S.meta = { version: d.version, chrome: d.chrome, electron: d.electron, ua: d.ua, dataPath: d.dataPath };
   $("sbVer").textContent = "v" + d.version;
   if ($("sbProxy")) {
@@ -583,5 +885,6 @@ app.init().then(d => {
       toast("Opening https://browserleaks.com/ip");
     };
   }
+  updateBookmarkStar();
   renderVpnPill();
 });

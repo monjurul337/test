@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("app", {
   saveProfiles: l => ipcRenderer.invoke("profiles:save", l),
   testProxy: p => ipcRenderer.invoke("profiles:test-proxy", p),
   clearProfile: id => ipcRenderer.invoke("profiles:clear", id),
+  clearBrowserData: opts => ipcRenderer.invoke("browser:clear-data", opts),
   copyText: t => ipcRenderer.send("clipboard:write", t),
   resetPanel: () => ipcRenderer.invoke("panel:reset"),
   openData: () => ipcRenderer.send("open-data-folder"),
@@ -24,5 +25,12 @@ contextBridge.exposeInMainWorld("app", {
   extInstallFolder: () => ipcRenderer.invoke("extensions:install-folder"),
   extRemove: id => ipcRenderer.invoke("extensions:remove", id),
   extToggle: (id, enabled) => ipcRenderer.invoke("extensions:toggle", { id, enabled }),
+  bookmarksGet: () => ipcRenderer.invoke("bookmarks:get"),
+  bookmarksAdd: item => ipcRenderer.invoke("bookmarks:add", item),
+  bookmarksRemove: id => ipcRenderer.invoke("bookmarks:remove", id),
+  bookmarksToggle: item => ipcRenderer.invoke("bookmarks:toggle", item),
+  historyGet: () => ipcRenderer.invoke("history:get"),
+  historyRemove: id => ipcRenderer.invoke("history:remove", id),
+  historyClear: () => ipcRenderer.invoke("history:clear"),
   on: (ch, fn) => { const ok = ["tabs", "maximized", "focus-address", "vpn-status"]; if (ok.includes(ch)) ipcRenderer.on(ch, (e, d) => fn(d)); }
 });

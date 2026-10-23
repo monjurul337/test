@@ -471,19 +471,20 @@ input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fbbf24;
+  color: #6e7486;
   transition: all var(--transition-fast);
   border-radius: 50%;
   cursor: pointer;
 }
 
 .star-btn svg {
-  fill: #fbbf24;
+  fill: none;
 }
 
 .star-btn:hover {
+  color: #fbbf24;
   transform: scale(1.15);
-  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.6));
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.4));
 }
 
 .star-btn.starred {

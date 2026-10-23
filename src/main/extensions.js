@@ -29,13 +29,21 @@ function copyFolderSync(from, to) {
 }
 
 function getBuiltinExtensionPath() {
-  const targetUserPath = path.join(app.getPath("userData"), "extensions", "playbooks-uploader-extension-v9.8");
+  const targetUserPath = path.join(app.getPath("userData"), "extensions", "playbooks-uploader-extension-v9.9");
 
   const candidateSources = [
-    path.join(process.resourcesPath, "app.asar.unpacked", "extensions", "playbooks-uploader-extension-v9.8"),
-    path.join(__dirname, "..", "..", "extensions", "playbooks-uploader-extension-v9.8"),
-    path.join(process.cwd(), "extensions", "playbooks-uploader-extension-v9.8")
+    path.join(process.resourcesPath, "app.asar.unpacked", "extensions", "playbooks-uploader-extension-v9.9"),
+    path.join(__dirname, "..", "..", "extensions", "playbooks-uploader-extension-v9.9"),
+    path.join(process.cwd(), "extensions", "playbooks-uploader-extension-v9.9")
   ];
+
+  // Clean up any old v9.8 in userData
+  try {
+    const oldV98 = path.join(app.getPath("userData"), "extensions", "playbooks-uploader-extension-v9.8");
+    if (fs.existsSync(oldV98)) {
+      fs.rmSync(oldV98, { recursive: true, force: true });
+    }
+  } catch (e) {}
 
   // If already copied in userData and valid manifest exists
   if (fs.existsSync(path.join(targetUserPath, "manifest.json"))) {
@@ -66,20 +74,28 @@ function ensureBuiltinExtension(store) {
 
   const manifest = readManifest(builtinPath);
   const list = store.get("extensions") || [];
-  let existing = list.find(e => e.id === "builtin_playbooks_uploader" || e.path === builtinPath || (e.name && e.name.includes("Play Books Auto Uploader")));
+
+  // Filter out any old v9.8 entries
+  const cleanedList = list.filter(e => {
+    if (e.path && e.path.includes("playbooks-uploader-extension-v9.8")) return false;
+    if (e.version === "9.8") return false;
+    return true;
+  });
+
+  let existing = cleanedList.find(e => e.id === "builtin_playbooks_uploader" || e.path === builtinPath || (e.name && e.name.includes("Play Books Auto Uploader")));
 
   if (!existing) {
     existing = {
       id: "builtin_playbooks_uploader",
       name: (manifest && manifest.name) || "Play Books Auto Uploader",
-      version: (manifest && manifest.version) || "9.8",
+      version: (manifest && manifest.version) || "9.9",
       description: (manifest && manifest.description) || "Play Books Auto Uploader built-in extension",
       path: builtinPath,
       enabled: true,
       isBuiltin: true
     };
-    list.unshift(existing);
-    store.set("extensions", list);
+    cleanedList.unshift(existing);
+    store.set("extensions", cleanedList);
   } else {
     let changed = false;
     if (existing.id !== "builtin_playbooks_uploader") {
@@ -90,16 +106,21 @@ function ensureBuiltinExtension(store) {
       existing.path = builtinPath;
       changed = true;
     }
+    if (manifest && existing.version !== manifest.version) {
+      existing.version = manifest.version;
+      changed = true;
+    }
     if (!existing.isBuiltin) {
       existing.isBuiltin = true;
       changed = true;
     }
-    if (!existing.enabled) {
+    // Only set enabled: true if not defined yet, preserving user toggle
+    if (existing.enabled === undefined) {
       existing.enabled = true;
       changed = true;
     }
-    if (changed) {
-      store.set("extensions", list);
+    if (cleanedList.length !== list.length || changed) {
+      store.set("extensions", cleanedList);
     }
   }
   return existing;
@@ -170,7 +191,7 @@ async function removeExtension(id, store, getAllSessions) {
   const list = store.get("extensions") || [];
   const target = list.find(e => e.id === id);
   if (target && target.isBuiltin) {
-    return { ok: false, error: "Play Books Auto Uploader is a permanent built-in extension and cannot be removed." };
+    return { ok: false, error: "Play Books Auto Uploader is a permanent built-in extension and cannot be removed. You can toggle it Off if you wish to disable it." };
   }
 
   const sessions = getAllSessions();
@@ -201,7 +222,13 @@ async function toggleExtension(id, enabled, store, getAllSessions) {
           await ses.loadExtension(target.path, { allowFileAccess: true });
         }
       } else {
-        ses.removeExtension(id);
+        const loadedExts = ses.getAllExtensions ? ses.getAllExtensions() : [];
+        const loaded = loadedExts.find(e => e.id === id || e.path === target.path || e.name === target.name);
+        if (loaded) {
+          ses.removeExtension(loaded.id);
+        } else {
+          ses.removeExtension(id);
+        }
       }
     } catch (e) {}
   }

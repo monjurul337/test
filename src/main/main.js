@@ -43,7 +43,6 @@ const DEFAULTS = {
     homeUrl: HOME,
     restoreTabs: true,
     notify: true,
-    flashTaskbar: true,
     alwaysOnTop: false,
     uaMode: "auto",            // auto | custom
     customUA: "",
@@ -62,8 +61,59 @@ const DEFAULTS = {
   },
   panel: {},                   // in-page assistant storage (profiles, etc.)
   extensions: [],
+  bookmarks: [
+    { id: "bm_playbooks", title: "Google Play Books Partner Center", url: "https://play.google.com/books/publish", favicon: "", time: Date.now() }
+  ],
+  history: [],
   winBounds: null
 };
+
+/* ------------------------------------------------------------ history helpers */
+function recordHistory(url, title, favicon) {
+  if (!url || !/^https?:\/\//i.test(url) || !store) return;
+  try {
+    const list = store.get("history") || [];
+    const now = Date.now();
+    if (list.length && list[0].url === url && now - list[0].time < 5000) {
+      if (title && (!list[0].title || list[0].title === url)) list[0].title = title;
+      if (favicon && !list[0].favicon) list[0].favicon = favicon;
+      return;
+    }
+    list.unshift({
+      id: "h_" + now.toString(36) + Math.random().toString(36).slice(2, 6),
+      url,
+      title: (title && title !== "Loading…") ? title : url,
+      favicon: favicon || "",
+      time: now
+    });
+    if (list.length > 2000) list.length = 2000;
+    store.set("history", list);
+  } catch (e) {}
+}
+
+function updateHistoryTitle(url, title) {
+  if (!url || !title || title === "Loading…" || !store) return;
+  try {
+    const list = store.get("history") || [];
+    const item = list.find(h => h.url === url);
+    if (item && item.title !== title) {
+      item.title = title;
+      store.set("history", list);
+    }
+  } catch (e) {}
+}
+
+function updateHistoryFavicon(url, favicon) {
+  if (!url || !favicon || !store) return;
+  try {
+    const list = store.get("history") || [];
+    const item = list.find(h => h.url === url);
+    if (item && !item.favicon) {
+      item.favicon = favicon;
+      store.set("history", list);
+    }
+  } catch (e) {}
+}
 
 /* ------------------------------------------------------------ identity */
 const CHROME_VERSION = "130.0.6723.117";
@@ -263,12 +313,25 @@ async function createTab(url, profileId, activate = true) {
   wc.on("page-title-updated", (e, title) => {
     t.title = (t.url && t.url.includes("home.html")) ? "Homepage" : title;
     pushTabs();
+    updateHistoryTitle(t.url, title);
   });
-  wc.on("page-favicon-updated", (e, f) => { t.favicon = f[0] || ""; pushTabs(); });
+  wc.on("page-favicon-updated", (e, f) => {
+    t.favicon = f[0] || "";
+    pushTabs();
+    updateHistoryFavicon(t.url, f[0]);
+  });
   wc.on("did-start-loading", () => { t.loading = true; pushTabs(); });
   wc.on("did-stop-loading", () => { t.loading = false; t.url = wc.getURL(); pushTabs(); });
-  wc.on("did-navigate", (e, u) => { t.url = u; pushTabs(); });
-  wc.on("did-navigate-in-page", (e, u) => { t.url = u; pushTabs(); });
+  wc.on("did-navigate", (e, u) => {
+    t.url = u;
+    pushTabs();
+    recordHistory(u, t.title, t.favicon);
+  });
+  wc.on("did-navigate-in-page", (e, u) => {
+    t.url = u;
+    pushTabs();
+    recordHistory(u, t.title, t.favicon);
+  });
   wc.on("did-fail-load", (e, code, desc, u, isMain) => {
     if (!isMain || code === -3) return;
     wc.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(errorPage(desc, u)));
@@ -377,7 +440,6 @@ function notify(title, body, urgent) {
     n.on("click", () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
     n.show();
   }
-  if (urgent && s.flashTaskbar && win && !win.isFocused()) win.flashFrame(true);
 }
 
 function tabFromSender(e) { for (const t of tabs.values()) if (t.view.webContents.id === e.sender.id) return t; return null; }
@@ -404,6 +466,8 @@ function ipc() {
     version: app.getVersion(), chrome: process.versions.chrome, electron: process.versions.electron, ua: chromeUA(),
     vpnStatus: vpn.getStatus(), vpnStore: store.get("vpn") || {},
     extensions: extensions.listExtensions(store),
+    bookmarks: store.get("bookmarks") || [],
+    history: (store.get("history") || []).slice(0, 300),
     dataPath: app.getPath("userData") }));
   ipcMain.on("tab:new", (e, a = {}) => createTab(a.url || null, a.profileId || (active() && active().profileId)));
   ipcMain.on("tab:close", (e, id) => closeTab(id));
@@ -472,9 +536,94 @@ function ipc() {
     await ses.clearStorageData(); await ses.clearCache();
     return true;
   });
+  ipcMain.handle("browser:clear-data", async (e, opts = {}) => {
+    try {
+      const sessions = getAllSessions();
+      if (!sessions.includes(session.defaultSession)) sessions.push(session.defaultSession);
+      for (const ses of sessions) {
+        if (opts.cache !== false) {
+          try { await ses.clearCache(); } catch (e) {}
+        }
+        const storages = [];
+        if (opts.cookies !== false) storages.push("cookies");
+        if (opts.storage !== false) storages.push("localstorage", "indexdb", "websql", "serviceworkers", "cachestorage");
+        if (storages.length > 0) {
+          try { await ses.clearStorageData({ storages }); } catch (e) {}
+        }
+      }
+      if (opts.history) {
+        store.set("history", []);
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
+    }
+  });
   ipcMain.handle("panel:reset", () => { store.set("panel", {}); return true; });
   ipcMain.on("open-data-folder", () => shell.openPath(app.getPath("userData")));
   ipcMain.on("clipboard:write", (e, t) => { if (typeof t === "string") clipboard.writeText(t); });
+
+  // Bookmarks IPC
+  ipcMain.handle("bookmarks:get", () => store.get("bookmarks") || []);
+  ipcMain.handle("bookmarks:add", (e, item) => {
+    const list = store.get("bookmarks") || [];
+    const url = String((item && item.url) || "").trim();
+    if (!url) return list;
+    const existing = list.find(b => b.url === url);
+    if (existing) {
+      if (item.title) existing.title = item.title;
+      if (item.favicon) existing.favicon = item.favicon;
+    } else {
+      list.unshift({
+        id: "bm_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        title: (item && item.title) || url,
+        url,
+        favicon: (item && item.favicon) || "",
+        time: Date.now()
+      });
+    }
+    store.set("bookmarks", list);
+    return list;
+  });
+  ipcMain.handle("bookmarks:remove", (e, idOrUrl) => {
+    const list = (store.get("bookmarks") || []).filter(b => b.id !== idOrUrl && b.url !== idOrUrl);
+    store.set("bookmarks", list);
+    return list;
+  });
+  ipcMain.handle("bookmarks:toggle", (e, item) => {
+    let list = store.get("bookmarks") || [];
+    const url = String((item && item.url) || "").trim();
+    if (!url) return { bookmarked: false, bookmarks: list };
+    const idx = list.findIndex(b => b.url === url);
+    let bookmarked = false;
+    if (idx >= 0) {
+      list.splice(idx, 1);
+      bookmarked = false;
+    } else {
+      list.unshift({
+        id: "bm_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        title: (item && item.title) || url,
+        url,
+        favicon: (item && item.favicon) || "",
+        time: Date.now()
+      });
+      bookmarked = true;
+    }
+    store.set("bookmarks", list);
+    return { bookmarked, bookmarks: list };
+  });
+
+  // History IPC
+  ipcMain.handle("history:get", () => store.get("history") || []);
+  ipcMain.handle("history:remove", (e, id) => {
+    const list = (store.get("history") || []).filter(h => h.id !== id);
+    store.set("history", list);
+    return list;
+  });
+  ipcMain.handle("history:clear", () => {
+    store.set("history", []);
+    return [];
+  });
 
   // Extensions IPC
   ipcMain.handle("extensions:list", () => extensions.listExtensions(store));
