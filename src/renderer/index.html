@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Sotizence Play Books Browser</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <!-- titlebar & tabs -->
+  <header id="titlebar">
+    <div class="brand" title="Sotizence Play Books Browser">
+      <div class="brand-badge">
+        <img src="logo.svg" alt="Sotizence">
+        <span class="brand-glow"></span>
+      </div>
+      <span class="brand-text">Sotizence</span>
+    </div>
+    
+    <div id="tabs"></div>
+    <button id="newTab" class="icon-btn small new-tab-btn" title="New tab (Ctrl+T)"></button>
+    <div class="drag"></div>
+    
+    <div class="winctl">
+      <button data-w="min" title="Minimize"></button>
+      <button data-w="max" title="Maximize"></button>
+      <button data-w="close" class="close" title="Close"></button>
+    </div>
+  </header>
+
+  <!-- luxury toolbar -->
+  <nav id="toolbar">
+    <div class="nav-cluster">
+      <button class="icon-btn" id="bBack" title="Back (Alt+Left)"></button>
+      <button class="icon-btn" id="bFwd" title="Forward (Alt+Right)"></button>
+      <button class="icon-btn" id="bReload" title="Reload (F5)"></button>
+      <button class="icon-btn" id="bHome" title="Google Play Books (Home)"></button>
+    </div>
+
+    <form id="addr">
+      <span id="lock"></span>
+      <span id="profileBadge" title="Browser profile of this tab"></span>
+      <input id="url" spellcheck="false" autocomplete="off" placeholder="Search Google or enter web address">
+      <button type="button" id="bCopyUrl" class="url-action-btn hide" title="Copy URL"></button>
+      <span id="zoomBadge" class="hide" title="Reset Zoom"></span>
+    </form>
+
+    <div class="action-cluster">
+      <button id="bVpn" class="vpn-pill off" title="Proton WireGuard VPN: Disconnected">
+        <span class="vpn-dot-ring">
+          <span class="vpn-dot"></span>
+          <span class="vpn-beacon"></span>
+        </span>
+        <span id="vpnText">VPN Off</span>
+      </button>
+      <button class="icon-btn" id="bSettings" title="Settings"></button>
+    </div>
+  </nav>
+
+  <!-- viewport & overlay pages -->
+  <main id="viewport">
+    <section id="page-settings" class="page hide"></section>
+  </main>
+
+  <!-- modern statusbar -->
+  <footer id="statusbar">
+    <div class="sb-item sb-status-item">
+      <span class="sb-indicator-dot"></span>
+      <span id="sbLeft">Ready</span>
+    </div>
+    <span class="grow"></span>
+    <div class="sb-item sb-tunnel-item">
+      <span id="sbProxy"></span>
+    </div>
+    <div class="sb-item sb-ver-item">
+      <span id="sbVer"></span>
+    </div>
+  </footer>
+
+<script src="icons.js"></script>
+<script src="shell.js"></script>
+</body>
+</html>
