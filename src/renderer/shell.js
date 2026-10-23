@@ -232,7 +232,7 @@ function renderSettings() {
               ${statusBadge}
             </div>
             <div style="font-size:12.5px;color:var(--tx-secondary);line-height:1.5;">${locDesc}</div>
-            ${vpn.error ? `<div style="color:var(--bad);margin-top:8px;font-size:12px;background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:6px;border:1px solid rgba(239,68,68,0.25);"><b>Error:</b> ${esc(vpn.error)}</div>` : ""}
+            ${!isConn && vpn.error ? `<div style="color:var(--bad);margin-top:8px;font-size:12px;background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:6px;border:1px solid rgba(239,68,68,0.25);"><b>Error:</b> ${esc(vpn.error)}</div>` : ""}
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
             ${isConn

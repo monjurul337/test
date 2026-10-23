@@ -12,6 +12,8 @@ const BOTTOM = 26;   // status bar
 const HOME_FILE = path.join(__dirname, "..", "renderer", "home.html");
 const HOME = "file://" + HOME_FILE.replace(/\\/g, "/");
 
+app.commandLine.appendSwitch("disable-blink-features", "AutomationControlled");
+
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 app.setAppUserModelId("com.sotizence.playbooks.browser");
 nativeTheme.themeSource = "dark";
@@ -64,11 +66,15 @@ const DEFAULTS = {
 };
 
 /* ------------------------------------------------------------ identity */
+const CHROME_VERSION = "130.0.6723.117";
+const CHROME_MAJOR = "130";
+const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION} Safari/537.36`;
+app.userAgentFallback = CHROME_UA;
+
 function chromeUA() {
-  const s = store.get("settings");
-  if (s.uaMode === "custom" && s.customUA.trim()) return s.customUA.trim();
-  const major = (process.versions.chrome || "130").split(".")[0];
-  return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+  const s = store ? store.get("settings") : null;
+  if (s && s.uaMode === "custom" && s.customUA && s.customUA.trim()) return s.customUA.trim();
+  return CHROME_UA;
 }
 
 const TRACKERS = ["googletagmanager.com", "google-analytics.com", "doubleclick.net", "facebook.net", "hotjar.com", "clarity.ms", "elastic-apm-rum"];
@@ -115,17 +121,24 @@ async function setupSession(profile) {
     ses.setPermissionRequestHandler((wc, perm, cb) => cb(["clipboard-sanitized-write", "fullscreen"].includes(perm)));
     ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (d, cb) => {
       const st = store.get("settings");
+      // Never block requests needed for Google authentication or services
+      if (/google\.|gstatic\.com|googleusercontent\.com|googleapis\.com/i.test(d.url)) {
+        return cb({ cancel: false });
+      }
       cb({ cancel: !!st.blockTrackers && TRACKERS.some(t => d.url.includes(t)) });
     });
     ses.webRequest.onBeforeSendHeaders({ urls: ["*://*/*"] }, (d, cb) => {
       const h = d.requestHeaders;
-      // keep client hints consistent with a regular Chrome on Windows
-      const major = (process.versions.chrome || "130").split(".")[0];
-      if (h["sec-ch-ua"] || h["Sec-CH-UA"]) {
-        delete h["sec-ch-ua"];
-        h["Sec-CH-UA"] = `"Chromium";v="${major}", "Google Chrome";v="${major}", "Not?A_Brand";v="99"`;
+      h["User-Agent"] = chromeUA();
+      if (h["sec-ch-ua"]) {
+        h["sec-ch-ua"] = `"Chromium";v="${CHROME_MAJOR}", "Google Chrome";v="${CHROME_MAJOR}", "Not?A_Brand";v="99"`;
       }
-      if (h["Sec-CH-UA-Platform"] || h["sec-ch-ua-platform"]) { delete h["sec-ch-ua-platform"]; h["Sec-CH-UA-Platform"] = '"Windows"'; }
+      if (h["sec-ch-ua-mobile"]) {
+        h["sec-ch-ua-mobile"] = "?0";
+      }
+      if (h["sec-ch-ua-platform"]) {
+        h["sec-ch-ua-platform"] = '"Windows"';
+      }
       cb({ requestHeaders: h });
     });
     ses.on("will-download", (e, item) => {
@@ -243,6 +256,7 @@ async function createTab(url, profileId, activate = true) {
   tabs.set(id, t);
   win.contentView.addChildView(view);
   const wc = view.webContents;
+  wc.setUserAgent(chromeUA());
   const s = store.get("settings");
   if (s.webrtcProtect) wc.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
 

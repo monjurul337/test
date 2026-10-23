@@ -7,6 +7,7 @@ const { dialog, app } = require("electron");
 
 let vpnProcess = null;
 let currentPort = 10808;
+let isIntentionalStop = false;
 let vpnStatus = {
   running: false,
   connecting: false,
@@ -98,9 +99,28 @@ function logDebug(msg) {
   } catch (e) {}
 }
 
+function extractErrorMessage(logs, code) {
+  if (!logs) {
+    return code !== 0 && code !== null ? `WireGuard tunnel closed unexpectedly (code ${code}).` : null;
+  }
+  const lines = logs.split("\n")
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith("DEBUG:") && !l.startsWith("Routine:") && !l.startsWith("peer(") && !l.startsWith("UAPI:") && !l.startsWith("UDP bind") && !l.startsWith("Interface state"));
+  
+  if (lines.length > 0) {
+    return lines.join("\n");
+  }
+  if (code !== 0 && code !== null) {
+    return `WireGuard tunnel closed unexpectedly (exit code ${code}).`;
+  }
+  return null;
+}
+
 async function stopVpn() {
   logDebug("stopVpn called");
-  updateStatus({ connecting: false });
+  isIntentionalStop = true;
+  updateStatus({ connecting: false, running: false, error: null });
+
   if (vpnProcess) {
     const proc = vpnProcess;
     vpnProcess = null;
@@ -113,12 +133,15 @@ async function stopVpn() {
       }
     } catch (e) {}
   }
+
   updateStatus({ running: false, ip: null, country: null, city: null, error: null });
+  setTimeout(() => { isIntentionalStop = false; }, 800);
   return Object.assign({}, vpnStatus);
 }
 
 function stopVpnSync() {
   logDebug("stopVpnSync called");
+  isIntentionalStop = true;
   if (vpnProcess) {
     const proc = vpnProcess;
     vpnProcess = null;
@@ -136,11 +159,14 @@ function stopVpnSync() {
     execSync("taskkill /f /im wireproxy.exe", { stdio: "ignore" });
   } catch (e) {}
   updateStatus({ running: false, connecting: false, ip: null, country: null, city: null, error: null }, false);
+  setTimeout(() => { isIntentionalStop = false; }, 800);
 }
 
 async function startVpn(rawConfig, fileName, port = 10808) {
   logDebug(`startVpn requested for file: ${fileName}, port: ${port}`);
+  isIntentionalStop = true;
   stopVpnSync();
+  isIntentionalStop = false;
 
   updateStatus({ connecting: true, error: null, fileName: fileName || vpnStatus.fileName || "ProtonVPN.conf", port });
   currentPort = port;
@@ -169,7 +195,6 @@ async function startVpn(rawConfig, fileName, port = 10808) {
 
   return new Promise((resolve, reject) => {
     let settled = false;
-
     let processLogs = "";
     const appendLog = (d) => {
       const s = d ? d.toString() : "";
@@ -179,8 +204,8 @@ async function startVpn(rawConfig, fileName, port = 10808) {
     };
 
     try {
-      logDebug(`Spawning: ${binPath} -c ${confPath}`);
-      vpnProcess = spawn(binPath, ["-c", confPath], {
+      logDebug(`Spawning: ${binPath} -s -c ${confPath}`);
+      vpnProcess = spawn(binPath, ["-s", "-c", confPath], {
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"]
       });
@@ -207,15 +232,23 @@ async function startVpn(rawConfig, fileName, port = 10808) {
 
     vpnProcess.on("exit", (code) => {
       logDebug(`Process exit event: code ${code}`);
+      const wasIntentional = isIntentionalStop;
+      isIntentionalStop = false;
       vpnProcess = null;
+
+      if (wasIntentional) {
+        updateStatus({ running: false, connecting: false, error: null });
+        return;
+      }
+
+      const cleanError = extractErrorMessage(processLogs, code);
       if (!settled) {
         settled = true;
-        const detail = processLogs.trim() ? `\nDetails: ${processLogs.trim()}` : "";
-        const msg = `WireGuard stopped unexpectedly (code ${code}).${detail}`;
+        const msg = cleanError || `WireGuard stopped unexpectedly (code ${code})`;
         updateStatus({ running: false, connecting: false, error: msg });
         reject(new Error(msg));
       } else {
-        updateStatus({ running: false, connecting: false, error: processLogs.trim() || null });
+        updateStatus({ running: false, connecting: false, error: cleanError });
       }
     });
 
@@ -235,8 +268,8 @@ async function startVpn(rawConfig, fileName, port = 10808) {
           settled = true;
           logDebug(`checkPortListening failed: ${err.message}`);
           stopVpn().catch(() => {});
-          const detail = processLogs.trim() ? " | " + processLogs.trim() : "";
-          const msg = (err.message || String(err)) + detail;
+          const cleanErr = extractErrorMessage(processLogs, -1);
+          const msg = cleanErr || (err.message || String(err));
           updateStatus({ running: false, connecting: false, error: msg });
           reject(new Error(msg));
         }
