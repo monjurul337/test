@@ -1,0 +1,42 @@
+{
+  "name": "playbooks-desktop",
+  "productName": "Play Books Browser",
+  "version": "1.0.0",
+  "description": "Desktop browser for Google Play Books with Proton VPN WireGuard tunnel",
+  "main": "src/main/main.js",
+  "author": "shawon arts",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.playbooks.desktop",
+    "productName": "Play Books Browser",
+    "artifactName": "PlayBooksBrowser-Setup-${version}.${ext}",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "bin/**/*", "package.json"],
+    "asar": true,
+    "asarUnpack": ["bin/**/*"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Play Books Browser",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
