@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homepage</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, system-ui, sans-serif;
+    min-height: 100vh;
+    background: #080c14;
+    background-image: 
+      radial-gradient(circle at 50% 25%, rgba(99, 102, 241, 0.16) 0%, transparent 55%),
+      radial-gradient(circle at 80% 75%, rgba(139, 92, 246, 0.1) 0%, transparent 45%),
+      radial-gradient(circle at 20% 75%, rgba(6, 182, 212, 0.08) 0%, transparent 45%);
+    background-attachment: fixed;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    user-select: none;
+    overflow-x: hidden;
+    position: relative;
+    color: #f8fafc;
+  }
+
+  /* Subtle star/dot matrix overlay */
+  body::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px);
+    background-size: 26px 26px;
+    opacity: 0.8;
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 680px;
+    width: 100%;
+    margin-top: -30px;
+  }
+
+  /* Center Apps Logo Icon */
+  .logo-wrap {
+    position: relative;
+    width: 104px;
+    height: 104px;
+    margin-bottom: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .logo-wrap:hover {
+    transform: scale(1.08) translateY(-3px);
+  }
+
+  .logo-aura {
+    position: absolute;
+    inset: -14px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, rgba(139, 92, 246, 0.3) 50%, transparent 70%);
+    border-radius: 50%;
+    filter: blur(16px);
+    opacity: 0.85;
+    animation: auraPulse 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes auraPulse {
+    from { transform: scale(0.92); opacity: 0.65; }
+    to { transform: scale(1.15); opacity: 0.95; }
+  }
+
+  .app-logo {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.6));
+    border-radius: 22px;
+  }
+
+  /* Sleek Dark Search Pill */
+  .search-wrap {
+    width: 100%;
+    max-width: 580px;
+    margin-bottom: 44px;
+  }
+
+  .search-form {
+    display: flex;
+    align-items: center;
+    background: rgba(16, 24, 40, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    padding: 10px 18px 10px 20px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .search-form:focus-within {
+    transform: translateY(-2px);
+    border-color: #6366f1;
+    background: rgba(20, 30, 52, 0.95);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25), 0 16px 45px rgba(0, 0, 0, 0.6);
+  }
+
+  .google-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 14px;
+    flex: none;
+  }
+
+  .search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 15px;
+    font-family: inherit;
+    color: #f8fafc;
+    background: transparent;
+  }
+
+  .search-input::placeholder {
+    color: #64748b;
+    font-weight: 400;
+  }
+
+  /* Bookmarks Row */
+  .bookmarks-grid {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 32px;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .bookmark-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: #cbd5e1;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+  }
+
+  .bookmark-circle {
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    background: rgba(18, 27, 44, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(8px);
+    margin-bottom: 12px;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bookmark-item:hover .bookmark-circle {
+    transform: translateY(-4px) scale(1.05);
+    background: rgba(25, 38, 64, 0.95);
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(99, 102, 241, 0.25);
+  }
+
+  .bookmark-label {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: #cbd5e1;
+    letter-spacing: -0.2px;
+    text-align: center;
+    transition: color 0.2s;
+  }
+
+  .bookmark-item:hover .bookmark-label {
+    color: #ffffff;
+  }
+
+  /* Bookmark Icon Geometries */
+  .bm-art {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 2.5px;
+  }
+
+  /* Circle 1: 4-color quadrant (Partner Center) */
+  .art-1 .q1 { background: #f97316; border-radius: 12px 2px 2px 2px; }
+  .art-1 .q2 { background: #3b82f6; border-radius: 2px 12px 2px 2px; }
+  .art-1 .q3 { background: #10b981; border-radius: 2px 2px 2px 12px; }
+  .art-1 .q4 { background: #06b6d4; border-radius: 2px 2px 12px 2px; }
+
+  /* Circle 2: Coral Cross Quadrant (BrowserLeaks IP) */
+  .art-2 .q1 { background: #ef4444; border-radius: 12px 2px 2px 2px; opacity: 0.9; }
+  .art-2 .q2 { background: #f87171; border-radius: 2px 12px 2px 2px; }
+  .art-2 .q3 { background: #f87171; border-radius: 2px 2px 2px 12px; }
+  .art-2 .q4 { background: #ef4444; border-radius: 2px 2px 12px 2px; opacity: 0.9; }
+
+  /* Circle 3: WireGuard / Proton VPN */
+  .art-3 .q1 { background: #6366f1; border-radius: 12px 2px 2px 2px; }
+  .art-3 .q2 { background: #8b5cf6; border-radius: 2px 12px 2px 2px; }
+  .art-3 .q3 { background: #8b5cf6; border-radius: 2px 2px 2px 12px; }
+  .art-3 .q4 { background: #6366f1; border-radius: 2px 2px 12px 2px; }
+
+  /* Circle 4: Vibrant Gold / Purple Quadrant (Live Books Store) */
+  .art-4 .q1 { background: #f59e0b; border-radius: 12px 2px 2px 2px; }
+  .art-4 .q2 { background: #ec4899; border-radius: 2px 12px 2px 2px; }
+  .art-4 .q3 { background: #8b5cf6; border-radius: 2px 2px 2px 12px; }
+  .art-4 .q4 { background: #d946ef; border-radius: 2px 2px 12px 2px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Apps Logo Icon -->
+  <div class="logo-wrap">
+    <div class="logo-aura"></div>
+    <img src="logo.svg" alt="Sotizence Play Books Browser" class="app-logo">
+  </div>
+
+  <!-- Search or Enter URL Bar -->
+  <div class="search-wrap">
+    <form class="search-form" id="searchForm" onsubmit="handleSearch(event)">
+      <div class="google-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.27 21.43 7.35 24 12 24z"/>
+          <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.02 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.27 2.57 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+        </svg>
+      </div>
+      <input type="text" id="queryInput" class="search-input" placeholder="Search or Enter URL" autofocus autocomplete="off">
+    </form>
+  </div>
+
+  <!-- Bookmarks Row -->
+  <div class="bookmarks-grid">
+    <a href="https://play.google.com/books/publish/u/0/" class="bookmark-item" title="Google Play Books Partner Center">
+      <div class="bookmark-circle">
+        <div class="bm-art art-1">
+          <div class="q1"></div><div class="q2"></div><div class="q3"></div><div class="q4"></div>
+        </div>
+      </div>
+      <span class="bookmark-label">Partner Center</span>
+    </a>
+
+    <a href="https://browserleaks.com/ip" class="bookmark-item" title="BrowserLeaks IP &amp; Leak Test">
+      <div class="bookmark-circle">
+        <div class="bm-art art-2">
+          <div class="q1"></div><div class="q2"></div><div class="q3"></div><div class="q4"></div>
+        </div>
+      </div>
+      <span class="bookmark-label">BrowserLeaks</span>
+    </a>
+
+    <a href="https://account.protonvpn.com" class="bookmark-item" title="Proton VPN WireGuard">
+      <div class="bookmark-circle">
+        <div class="bm-art art-3">
+          <div class="q1"></div><div class="q2"></div><div class="q3"></div><div class="q4"></div>
+        </div>
+      </div>
+      <span class="bookmark-label">Proton VPN</span>
+    </a>
+
+    <a href="https://play.google.com/store/books" class="bookmark-item" title="Google Play Books Store">
+      <div class="bookmark-circle">
+        <div class="bm-art art-4">
+          <div class="q1"></div><div class="q2"></div><div class="q3"></div><div class="q4"></div>
+        </div>
+      </div>
+      <span class="bookmark-label">Live Store</span>
+    </a>
+  </div>
+</div>
+
+<script>
+  function handleSearch(e) {
+    e.preventDefault();
+    const input = document.getElementById("queryInput");
+    let val = (input.value || "").trim();
+    if (!val) return;
+    if (/^[a-zA-Z]+:\/\//i.test(val)) {
+      window.location.href = val;
+    } else if (val.includes(".") && !val.includes(" ")) {
+      window.location.href = "https://" + val;
+    } else {
+      window.location.href = "https://www.google.com/search?q=" + encodeURIComponent(val);
+    }
+  }
+</script>
+
+</body>
+</html>

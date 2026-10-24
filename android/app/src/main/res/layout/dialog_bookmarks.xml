@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layoutWidth="match_parent"
+    android:layoutHeight="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_bottom_bar"
+    android:padding="20dp">
+
+    <!-- Handle -->
+    <View
+        android:layoutWidth="36dp"
+        android:layoutHeight="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:background="#33FFFFFF" />
+
+    <TextView
+        android:layoutWidth="wrap_content"
+        android:layoutHeight="wrap_content"
+        android:text="@string/bookmarks"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="14dp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvBookmarks"
+        android:layoutWidth="match_parent"
+        android:layoutHeight="wrap_content"
+        android:maxHeight="320dp" />
+
+    <TextView
+        android:id="@+id/tvEmptyBookmarks"
+        android:layoutWidth="match_parent"
+        android:layoutHeight="80dp"
+        android:gravity="center"
+        android:text="No bookmarks saved yet"
+        android:textColor="@color/text_muted"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+</LinearLayout>

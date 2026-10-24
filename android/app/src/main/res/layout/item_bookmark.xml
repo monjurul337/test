@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layoutWidth="match_parent"
+    android:layoutHeight="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="10dp"
+    android:paddingHorizontal="4dp"
+    android:background="?attr/selectableItemBackground">
+
+    <ImageView
+        android:layoutWidth="20dp"
+        android:layoutHeight="20dp"
+        android:src="@drawable/ic_bookmark_filled"
+        android:contentDescription="Bookmark icon"
+        app:tint="@color/primary_accent" />
+
+    <LinearLayout
+        android:layoutWidth="0dp"
+        android:layoutHeight="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="14dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvBookmarkTitle"
+            android:layoutWidth="match_parent"
+            android:layoutHeight="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:singleLine="true" />
+
+        <TextView
+            android:id="@+id/tvBookmarkUrl"
+            android:layoutWidth="match_parent"
+            android:layoutHeight="wrap_content"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp"
+            android:singleLine="true"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/btnDeleteBookmark"
+        android:layoutWidth="28dp"
+        android:layoutHeight="28dp"
+        android:padding="4dp"
+        android:src="@drawable/ic_close"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Delete"
+        app:tint="@color/text_muted" />
+
+</LinearLayout>
