@@ -1,0 +1,55 @@
+{
+ "action": {
+  "default_icon": {
+   "128": "icons/icon128.png",
+   "16": "icons/icon16.png",
+   "48": "icons/icon48.png"
+  },
+  "default_title": "Play Books Auto Uploader \u2014 toggle the in-page panel"
+ },
+ "background": {
+  "service_worker": "background.js"
+ },
+ "content_scripts": [
+  {
+   "matches": [
+    "https://play.google.com/books/publish/*"
+   ],
+   "js": [
+    "early-intercept.js"
+   ],
+   "run_at": "document_start",
+   "world": "MAIN",
+   "all_frames": true
+  },
+  {
+   "matches": [
+    "https://play.google.com/books/publish/*"
+   ],
+   "js": [
+    "jszip.min.js",
+    "content.js"
+   ],
+   "run_at": "document_idle"
+  }
+ ],
+ "description": "Automates Google Play Books Partner Center uploads from an in-page panel: pick one ZIP (extracted with JSZip into the EPUB, cover and metadata.txt fields) or the three files separately, press Run, and the book is uploaded, filled in, processed and published automatically \u2014 all in the same tab.",
+ "host_permissions": [
+  "https://play.google.com/*"
+ ],
+ "icons": {
+  "128": "icons/icon128.png",
+  "16": "icons/icon16.png",
+  "48": "icons/icon48.png"
+ },
+ "manifest_version": 3,
+ "name": "Play Books Auto Uploader",
+ "permissions": [
+  "storage",
+  "tabs",
+  "alarms",
+  "notifications",
+  "scripting"
+ ],
+ "version": "9.26"
+}
