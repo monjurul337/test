@@ -1,0 +1,12 @@
+node_modules/
+dist/
+
+# Android
+.gradle/
+build/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.keystore
+!android/gradle/wrapper/gradle-wrapper.jar
