@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IVAC Visa Bot</string>
+    <string name="app_description">Indian Visa Appointment OTP Forwarder</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_connecting">Connecting...</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="notification_channel_name">Visa Bot Service</string>
+    <string name="notification_running">OTP forwarding service running</string>
+</resources>

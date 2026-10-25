@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "IVAC Visa Appointment Bot",
+  "version": "1.0.0",
+  "description": "Automates Indian Visa appointment slot booking on appointment.ivacbd.com with in-page floating widget",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "IVAC Visa Bot (Toggle In-Page Widget)"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://appointment.ivacbd.com/*", "http://localhost:*/*"],
+      "css": [
+        "content/floating-ui.css"
+      ],
+      "js": [
+        "content/utils.js",
+        "content/form-filler.js",
+        "content/navigator.js",
+        "content/slot-monitor.js",
+        "content/otp-handler.js",
+        "content/floating-ui.js",
+        "content/main.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://appointment.ivacbd.com/*",
+    "http://localhost:3000/*",
+    "ws://localhost:3000/*",
+    "wss://*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/*", "popup/*", "icons/*"],
+      "matches": ["https://appointment.ivacbd.com/*", "http://localhost:*/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
