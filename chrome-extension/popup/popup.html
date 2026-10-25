@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IVAC Visa Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- ── Header ── -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">🛂</span>
+          <div>
+            <h1 class="logo-title">IVAC Visa Bot</h1>
+            <span class="logo-sub">Appointment Automator</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="status-dot" id="ws-dot" title="Backend connection"></div>
+        <button class="icon-btn" id="btn-settings" title="Settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- ── Tab Navigation ── -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="profiles">Profiles</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+      <button class="tab-btn" data-tab="logs">Logs</button>
+    </nav>
+
+    <!-- ════════════ TAB: DASHBOARD ════════════ -->
+    <div class="tab-content active" id="tab-dashboard">
+      <!-- Pairing card -->
+      <div class="card pairing-card">
+        <div class="card-header">
+          <span class="card-label">Android Pairing</span>
+          <div class="connection-badges">
+            <span class="badge" id="badge-android">📱 Android</span>
+          </div>
+        </div>
+        <div class="pairing-code-display">
+          <div class="pairing-code" id="pairing-code">------</div>
+          <button class="copy-btn" id="btn-copy-code" title="Copy code">📋</button>
+        </div>
+        <div class="pairing-hint">Enter this code in the Android app to link your device</div>
+        <button class="btn btn-ghost btn-sm" id="btn-reset-session">🔄 New Pairing Code</button>
+      </div>
+
+      <!-- Bot control -->
+      <div class="card control-card">
+        <div class="card-header">
+          <span class="card-label">Automation Control</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-bot">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="bot-status" id="bot-status-text">Bot is inactive</div>
+        <div class="control-row">
+          <button class="btn btn-primary" id="btn-open-portal">🌐 Open Portal</button>
+          <button class="btn btn-secondary" id="btn-start-automation">▶ Run Now</button>
+        </div>
+      </div>
+
+      <!-- Quick config -->
+      <div class="card quick-config-card">
+        <div class="card-label">Quick Settings</div>
+        <div class="form-row">
+          <label>Mission</label>
+          <select id="qs-mission" class="select-input"></select>
+        </div>
+        <div class="form-row">
+          <label>IVAC Center</label>
+          <select id="qs-ivac" class="select-input"></select>
+        </div>
+        <div class="form-row">
+          <label>Visa Type</label>
+          <select id="qs-visa-type" class="select-input"></select>
+        </div>
+        <div class="form-row">
+          <label>Check Interval (sec)</label>
+          <input type="number" id="qs-interval" class="text-input" min="10" max="300" value="20">
+        </div>
+        <div class="form-row">
+          <label>Preferred Dates</label>
+          <input type="text" id="qs-preferred-dates" class="text-input" placeholder="e.g. 2024-12-15, 2024-12-20">
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="qs-auto-confirm">
+          <span>Auto-confirm booking</span>
+        </label>
+        <button class="btn btn-primary btn-full" id="btn-save-quick">💾 Save Settings</button>
+      </div>
+
+      <!-- OTP Log -->
+      <div class="card otp-card">
+        <div class="card-header">
+          <span class="card-label">Recent OTPs</span>
+          <button class="btn btn-ghost btn-sm" id="btn-clear-otp">Clear</button>
+        </div>
+        <div class="otp-list" id="otp-list">
+          <div class="empty-state">No OTPs received yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════ TAB: PROFILES ════════════ -->
+    <div class="tab-content" id="tab-profiles">
+      <div class="profiles-header">
+        <div class="card-label">Applicant Profiles</div>
+        <button class="btn btn-primary btn-sm" id="btn-add-profile">+ Add Profile</button>
+      </div>
+
+      <div class="profile-list" id="profile-list">
+        <div class="empty-state">No profiles yet. Add one to get started.</div>
+      </div>
+
+      <!-- Profile Form (hidden by default) -->
+      <div class="card profile-form-card hidden" id="profile-form-card">
+        <div class="card-header">
+          <span class="card-label" id="profile-form-title">New Profile</span>
+          <button class="icon-btn" id="btn-close-profile-form">✕</button>
+        </div>
+        <div class="form-group">
+          <label>Profile Name</label>
+          <input type="text" id="pf-name" class="text-input" placeholder="e.g. John Doe">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Given Name</label>
+            <input type="text" id="pf-given-name" class="text-input" placeholder="Given name">
+          </div>
+          <div class="form-group">
+            <label>Surname</label>
+            <input type="text" id="pf-surname" class="text-input" placeholder="Surname">
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Passport No.</label>
+            <input type="text" id="pf-passport" class="text-input" placeholder="A1234567">
+          </div>
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" id="pf-dob" class="text-input">
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="pf-phone" class="text-input" placeholder="+880...">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="pf-email" class="text-input" placeholder="email@example.com">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Gender</label>
+          <select id="pf-gender" class="select-input">
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Nationality</label>
+          <input type="text" id="pf-nationality" class="text-input" placeholder="Bangladeshi">
+        </div>
+        <div class="form-group">
+          <label>Address</label>
+          <input type="text" id="pf-address" class="text-input" placeholder="Full address">
+        </div>
+        <div class="form-group">
+          <label>Documents (PDF files)</label>
+          <div class="file-drop-zone" id="file-drop-zone">
+            <span>📎 Drop PDFs here or click to select</span>
+            <input type="file" id="pf-files" accept=".pdf,image/*" multiple class="hidden">
+          </div>
+          <div class="file-list" id="pf-file-list"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="btn-cancel-profile">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-profile">Save Profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════ TAB: SETTINGS ════════════ -->
+    <div class="tab-content" id="tab-settings">
+      <div class="card">
+        <div class="card-label">Backend Server</div>
+        <div class="form-group">
+          <label>Server URL</label>
+          <input type="url" id="set-server-url" class="text-input" placeholder="http://localhost:3000">
+        </div>
+        <div class="form-group">
+          <label>Session ID <span class="muted">(auto-generated)</span></label>
+          <div class="mono-display" id="set-session-id">---</div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-server">Save & Reconnect</button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Automation</div>
+        <div class="form-group">
+          <label>Gap Timing (ms between actions)</label>
+          <input type="number" id="set-gap-timing" class="text-input" min="500" max="10000" value="3000">
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="set-auto-confirm">
+          <span>Auto-confirm booking (disable for manual review)</span>
+        </label>
+        <button class="btn btn-primary" id="btn-save-automation">Save</button>
+      </div>
+
+      <div class="card danger-zone">
+        <div class="card-label" style="color:#f87171">Danger Zone</div>
+        <button class="btn btn-danger" id="btn-reset-all">🗑 Reset All Settings</button>
+      </div>
+    </div>
+
+    <!-- ════════════ TAB: LOGS ════════════ -->
+    <div class="tab-content" id="tab-logs">
+      <div class="logs-header">
+        <span class="card-label">Activity Log</span>
+        <button class="btn btn-ghost btn-sm" id="btn-clear-logs">Clear</button>
+      </div>
+      <div class="log-container" id="log-container">
+        <div class="empty-state">No log entries</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+name: Build Android Release APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Release APK (JDK 17 + Kotlin)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: 🐘 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 🔑 Ensure Keystore Directory & Debug Keystore
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            echo "Generating debug signing keystore for release artifact..."
+            keytool -genkey -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=VisaBot, OU=Android, O=VisaBot, L=Dhaka, S=Dhaka, C=BD"
+          fi
+
+      - name: 🛡️ Make gradlew executable
+        run: chmod +x android-app/gradlew
+
+      - name: 🚀 Build Release APK
+        run: |
+          cd android-app
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 🔍 Locate and Stage Release APK
+        id: stage_apk
+        run: |
+          mkdir -p release-output
+          # Locate built release apk
+          APK_PATH=$(find android-app/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::Release APK not found!"
+            exit 1
+          fi
+          echo "Found APK at: $APK_PATH"
+          cp "$APK_PATH" release-output/IVAC-VisaBot-release.apk
+          ls -la release-output/
+
+      - name: 📦 Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IVAC-VisaBot-Release-APK
+          path: release-output/IVAC-VisaBot-release.apk
+          retention-days: 30
+
+      - name: 🏷️ Create GitHub Release (If Tagged)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-output/IVAC-VisaBot-release.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
