@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Background Colors -->
+    <color name="bg_primary">#0A0E1A</color>
+    <color name="bg_secondary">#0F1628</color>
+    <color name="bg_card">#131C30</color>
+
+    <!-- Accent Colors -->
+    <color name="accent_green">#4ADE80</color>
+    <color name="accent_green_dark">#22C55E</color>
+    <color name="accent_purple">#818CF8</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#F0F4FF</color>
+    <color name="text_secondary">#8B9EC7</color>
+    <color name="text_muted">#4A5A7A</color>
+
+    <!-- Status Colors -->
+    <color name="status_connected">#4ADE80</color>
+    <color name="status_connecting">#FB923C</color>
+    <color name="status_disconnected">#8B9EC7</color>
+    <color name="status_error">#F87171</color>
+
+    <!-- Primary and material colors -->
+    <color name="colorPrimary">#4ADE80</color>
+    <color name="colorPrimaryDark">#22C55E</color>
+    <color name="colorAccent">#818CF8</color>
+</resources>
