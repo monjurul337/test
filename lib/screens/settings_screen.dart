@@ -574,6 +574,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : pool.sessions.first.cookieHeader);
     }
     _dolaTestStatuses.remove(index);
+    if (!mounted) return;
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Account removed from pool.')),

@@ -823,7 +823,8 @@ class DolaApi {
   }) async {
     final pool = DolaPool.instance;
     if (pool.isEmpty) {
-      final single = await DolaStore.load();
+      final raw = await DolaStore.load();
+      final single = DolaSession.fromString(raw);
       if (!single.isValid) {
         throw const DolaApiException(
             'No Dola accounts found. Please add Dola cookies in Settings.');
@@ -888,7 +889,8 @@ class DolaApi {
   }) async {
     final pool = DolaPool.instance;
     if (pool.isEmpty) {
-      final single = await DolaStore.load();
+      final raw = await DolaStore.load();
+      final single = DolaSession.fromString(raw);
       if (!single.isValid) {
         throw const DolaApiException(
             'No Dola accounts found. Please add Dola cookies in Settings.');
