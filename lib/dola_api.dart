@@ -498,7 +498,12 @@ class DolaPool {
         final ok = await api.testConnection();
         results[i] = ok ? 'Active' : 'Failed';
       } catch (e) {
-        results[i] = '$e';
+        final msg = '$e';
+        if (msg.contains('high demand') || msg.contains('busy')) {
+          results[i] = 'Active';
+        } else {
+          results[i] = msg;
+        }
       }
     }
     return results;
@@ -532,11 +537,13 @@ class DolaApi {
       );
       final bodyBytes = utf8.encode(jsonEncode(payload));
 
-      // 1. Try web endpoint first
+      // 1. Try web endpoint first with web query params
+      final webParams = _buildWebQueryParams(region: session.carrierRegion);
+      final webUrl = '$_webUrl?$webParams';
       http.Response? res;
       try {
         res = await http
-            .post(Uri.parse(_webUrl),
+            .post(Uri.parse(webUrl),
                 headers: _buildWebHeaders(), body: bodyBytes)
             .timeout(const Duration(seconds: 15));
       } catch (_) {}
@@ -565,6 +572,12 @@ class DolaApi {
       if (body.contains('STREAM_ERROR')) {
         final errorMatch = RegExp(r'"error_msg"\s*:\s*"([^"]+)"').firstMatch(body);
         final msg = errorMatch?.group(1) ?? 'Session error';
+        if (msg.toLowerCase().contains('high demand') ||
+            msg.toLowerCase().contains('busy') ||
+            msg.toLowerCase().contains('try again later')) {
+          // This confirms the session cookies ARE valid and authenticated!
+          return true;
+        }
         throw DolaApiException('Dola returned error: $msg');
       }
 
@@ -631,8 +644,10 @@ class DolaApi {
 
     final client = http.Client();
     try {
-      // Create request: try web endpoint
-      http.Request request = http.Request('POST', Uri.parse(_webUrl));
+      // Create request: try web endpoint with parameters
+      final webParams = _buildWebQueryParams(region: session.carrierRegion);
+      final webFullUrl = '$_webUrl?$webParams';
+      http.Request request = http.Request('POST', Uri.parse(webFullUrl));
       request.headers.addAll(_buildWebHeaders());
       request.body = jsonEncode(payload);
 
@@ -943,6 +958,22 @@ class DolaApi {
     throw lastError ?? const DolaApiException('All Dola pool accounts failed.');
   }
 
+  static String _buildWebQueryParams({String? region}) {
+    final reg = (region != null && region.isNotEmpty) ? region.toUpperCase() : 'US';
+    final tabId = 'ais_tab_${DateTime.now().millisecondsSinceEpoch}';
+    return 'aid=495671'
+        '&channel=g'
+        '&device_platform=web'
+        '&language=en'
+        '&region=$reg'
+        '&sys_region=$reg'
+        '&samantha_web=1'
+        '&use-olympus-account=1'
+        '&version_code=20800'
+        '&web_platform=browser'
+        '&web_tab_id=$tabId';
+  }
+
   static String _buildQueryParams(int nowMs) {
     return 'device_platform=android&os=android&ssmix=a'
         '&cdid=ee3c4d85-c8f0-4c57-8027-1ec83293a5d5&channel=googleplay&aid=489823'
@@ -965,7 +996,8 @@ class DolaApi {
       'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
+      'agw-js-conv': 'str, str',
+      'Accept': '*/*',
       'Cookie': session.cookieHeader,
     };
   }

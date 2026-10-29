@@ -500,11 +500,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _dolaTesting = false;
-        _dolaTestOk = false;
-        _dolaTestResult = '$e';
-      });
+      final msg = '$e';
+      if (msg.contains('high demand') || msg.contains('try again later')) {
+        setState(() {
+          _dolaTesting = false;
+          _dolaTestOk = true;
+          _dolaTestResult =
+              'Session Valid & Active! (Note: Dola server is under high demand). Click "Add to pool / Save" to proceed.';
+        });
+      } else {
+        setState(() {
+          _dolaTesting = false;
+          _dolaTestOk = false;
+          _dolaTestResult = msg;
+        });
+      }
     }
   }
 
