@@ -9,6 +9,8 @@ import 'package:image/image.dart' as img;
 
 import 'cloudinary_api.dart' show GenerationResult, GenerationTiming;
 
+import 'secure_store.dart';
+
 /// Exception thrown when a Dola AI request fails.
 class DolaApiException implements Exception {
   final String message;
@@ -30,6 +32,7 @@ class DolaSession {
   final String uid;
   final String ttwid;
   final Map<String, String> rawCookies;
+  final String rawText;
 
   const DolaSession({
     required this.sessionId,
@@ -40,6 +43,7 @@ class DolaSession {
     this.uid = '',
     this.ttwid = '',
     this.rawCookies = const {},
+    this.rawText = '',
   });
 
   bool get isValid => sessionId.trim().isNotEmpty;
@@ -52,24 +56,24 @@ class DolaSession {
 
   /// Cookie header formatted for ByteDance/Dola API requests.
   String get cookieHeader {
+    if (rawCookies.isNotEmpty) {
+      final map = Map<String, String>.from(rawCookies);
+      if (sessionId.isNotEmpty) {
+        map['sessionid'] = sessionId;
+        map['sessionid_ss'] = sessionId;
+        map['sid_tt'] = sessionId;
+      }
+      return map.entries.map((e) => '${e.key}=${e.value}').join('; ');
+    }
     final parts = <String>[];
-    parts.add('store-idc=$storeIdc');
-    parts.add('store-country-code=$carrierRegion');
-    parts.add('store-country-code-src=uid');
-    parts.add('install_id=7681561912517068597');
-    parts.add('ttreq=1\$993e412ea6d9e18bdd45df95c2f8a2892070234e');
-    if (odinTt.isNotEmpty) parts.add('odin_tt=$odinTt');
-    if (sidGuard.isNotEmpty) parts.add('sid_guard=$sidGuard');
+    if (storeIdc.isNotEmpty) parts.add('store-idc=$storeIdc');
+    if (carrierRegion.isNotEmpty) parts.add('store-country-code=$carrierRegion');
     parts.add('sessionid=$sessionId');
     parts.add('sessionid_ss=$sessionId');
     parts.add('sid_tt=$sessionId');
+    if (odinTt.isNotEmpty) parts.add('odin_tt=$odinTt');
+    if (sidGuard.isNotEmpty) parts.add('sid_guard=$sidGuard');
     if (ttwid.isNotEmpty) parts.add('ttwid=$ttwid');
-
-    for (final e in rawCookies.entries) {
-      if (!parts.any((p) => p.startsWith('${e.key}='))) {
-        parts.add('${e.key}=${e.value}');
-      }
-    }
     return parts.join('; ');
   }
 
@@ -165,7 +169,114 @@ class DolaSession {
       uid: uid,
       ttwid: ttwid,
       rawCookies: cookies,
+      rawText: raw,
     );
+  }
+
+  /// Parses bulk cookie text (from a .txt file, pasted accounts, or JSON list)
+  /// into a list of valid DolaSession accounts.
+  static List<DolaSession> parseBulk(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return [];
+
+    final result = <DolaSession>[];
+
+    // 1. JSON Array
+    if (text.startsWith('[') || text.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is List) {
+          // List of cookie lists: [[{name: ...}], [{name: ...}]]
+          if (decoded.isNotEmpty && decoded.first is List) {
+            for (final sub in decoded) {
+              final s = DolaSession.fromString(jsonEncode(sub));
+              if (s.isValid) result.add(s);
+            }
+          } else if (decoded.isNotEmpty && decoded.first is Map) {
+            // Check if multiple sessionids are in one flat list
+            final sids = <int>[];
+            for (var i = 0; i < decoded.length; i++) {
+              final n = (decoded[i]['name'] ?? '').toString().toLowerCase();
+              if (n == 'sessionid' || n == 'sessionid_ss') {
+                sids.add(i);
+              }
+            }
+            if (sids.length > 1) {
+              for (var i = 0; i < sids.length; i++) {
+                final start = sids[i];
+                final end = (i + 1 < sids.length) ? sids[i + 1] : decoded.length;
+                final slice = decoded.sublist(start, end);
+                final s = DolaSession.fromString(jsonEncode(slice));
+                if (s.isValid) result.add(s);
+              }
+            } else {
+              final s = DolaSession.fromString(text);
+              if (s.isValid) result.add(s);
+            }
+          }
+        } else if (decoded is Map) {
+          final s = DolaSession.fromString(text);
+          if (s.isValid) result.add(s);
+        }
+      } catch (_) {}
+    }
+
+    if (result.isNotEmpty) return _dedupSessions(result);
+
+    // 2. Line-by-line / text blocks
+    final lines = text.split('\n');
+    final currentBlock = <String>[];
+
+    void flush() {
+      if (currentBlock.isEmpty) return;
+      final blockText = currentBlock.join('\n').trim();
+      currentBlock.clear();
+      if (blockText.isEmpty) return;
+      final s = DolaSession.fromString(blockText);
+      if (s.isValid) result.add(s);
+    }
+
+    for (var line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) {
+        flush();
+        continue;
+      }
+      if (trimmed.startsWith('---') ||
+          trimmed.startsWith('===') ||
+          trimmed.startsWith('***')) {
+        flush();
+        continue;
+      }
+      // If line is a complete header string containing sessionid and we already have one
+      if (trimmed.contains('sessionid=') &&
+          !trimmed.startsWith('#') &&
+          currentBlock.any((l) => l.contains('sessionid='))) {
+        flush();
+      }
+      currentBlock.add(line);
+    }
+    flush();
+
+    // Fallback if nothing matched
+    if (result.isEmpty) {
+      final s = DolaSession.fromString(text);
+      if (s.isValid) result.add(s);
+    }
+
+    return _dedupSessions(result);
+  }
+
+  static List<DolaSession> _dedupSessions(List<DolaSession> list) {
+    final seen = <String>{};
+    final out = <DolaSession>[];
+    for (final s in list) {
+      if (s.isValid && !seen.contains(s.sessionId)) {
+        seen.add(s.sessionId);
+        out.add(s);
+      }
+    }
+    return out;
   }
 }
 
@@ -296,13 +407,112 @@ class DolaSigner {
   }
 }
 
+/// Manages a pool of multiple Dola AI sessions for load balancing,
+/// automatic rotation, and failover across accounts.
+class DolaPool {
+  static final DolaPool instance = DolaPool._();
+  DolaPool._();
+
+  List<DolaSession> _sessions = [];
+  int _currentIndex = 0;
+  bool autoRotate = true;
+
+  List<DolaSession> get sessions => List.unmodifiable(_sessions);
+  int get count => _sessions.length;
+  bool get isEmpty => _sessions.isEmpty;
+  bool get isNotEmpty => _sessions.isNotEmpty;
+  int get currentIndex => _currentIndex;
+
+  void setSessions(List<DolaSession> list) {
+    _sessions = list.where((s) => s.isValid).toList();
+    if (_currentIndex >= _sessions.length) _currentIndex = 0;
+  }
+
+  void addSession(DolaSession session) {
+    if (session.isValid &&
+        !_sessions.any((s) => s.sessionId == session.sessionId)) {
+      _sessions.add(session);
+    }
+  }
+
+  void addSessions(List<DolaSession> list) {
+    for (final s in list) {
+      addSession(s);
+    }
+  }
+
+  void removeAt(int index) {
+    if (index >= 0 && index < _sessions.length) {
+      _sessions.removeAt(index);
+      if (_currentIndex >= _sessions.length) _currentIndex = 0;
+    }
+  }
+
+  void clear() {
+    _sessions.clear();
+    _currentIndex = 0;
+  }
+
+  DolaSession? nextSession() {
+    if (_sessions.isEmpty) return null;
+    final s = _sessions[_currentIndex % _sessions.length];
+    if (autoRotate && _sessions.length > 1) {
+      _currentIndex = (_currentIndex + 1) % _sessions.length;
+    }
+    return s;
+  }
+
+  DolaSession? get currentSession {
+    if (_sessions.isEmpty) return null;
+    return _sessions[_currentIndex % _sessions.length];
+  }
+
+  Future<void> loadFromStore() async {
+    final rawList = await DolaStore.loadBulk();
+    final loaded = <DolaSession>[];
+    for (final raw in rawList) {
+      final parsed = DolaSession.parseBulk(raw);
+      loaded.addAll(parsed);
+    }
+    setSessions(loaded);
+    autoRotate = await AppPrefs.dolaAutoRotate();
+  }
+
+  Future<void> saveToStore() async {
+    final rawList = _sessions
+        .map((s) => s.rawText.isNotEmpty ? s.rawText : s.cookieHeader)
+        .toList();
+    await DolaStore.saveBulk(rawList);
+    await AppPrefs.setDolaAutoRotate(autoRotate);
+  }
+
+  Future<Map<int, String>> testAll({
+    void Function(int index, int total, String status)? onProgress,
+  }) async {
+    final results = <int, String>{};
+    for (var i = 0; i < _sessions.length; i++) {
+      final s = _sessions[i];
+      onProgress?.call(i + 1, _sessions.length, 'Testing account ${i + 1}...');
+      try {
+        final api = DolaApi(s);
+        final ok = await api.testConnection();
+        results[i] = ok ? 'Active' : 'Failed';
+      } catch (e) {
+        results[i] = '$e';
+      }
+    }
+    return results;
+  }
+}
+
 /// Dola AI Image Generation client using https://www.dola.com session cookies.
 class DolaApi {
   final DolaSession session;
 
   DolaApi(this.session);
 
-  static const String _baseUrl =
+  static const String _webUrl = 'https://www.dola.com/chat/completion';
+  static const String _appUrl =
       'https://api16-normal-i18n-myb.dola.com/chat/completion';
   static const String _botId = '7339470689562525703'; // Dola web bot
 
@@ -313,28 +523,55 @@ class DolaApi {
     }
     try {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      final queryParams = _buildQueryParams(nowMs);
-      final url = '$_baseUrl?$queryParams&_rticket=$nowMs';
-      final sig = DolaSigner.sign(url, timestamp: nowMs ~/ 1000);
-
-      final headers = _buildHeaders(nowMs, sig);
       final payload = _buildPayload(
         text: 'hello',
         conversationId: '',
         lastMessageIndex: 0,
         lastSectionId: '',
-        localConvId: '',
+        localConvId: 'ais_test_$nowMs',
       );
+      final bodyBytes = utf8.encode(jsonEncode(payload));
 
-      final res = await http
-          .post(Uri.parse(url),
-              headers: headers, body: utf8.encode(jsonEncode(payload)))
-          .timeout(const Duration(seconds: 20));
+      // 1. Try web endpoint first
+      http.Response? res;
+      try {
+        res = await http
+            .post(Uri.parse(_webUrl),
+                headers: _buildWebHeaders(), body: bodyBytes)
+            .timeout(const Duration(seconds: 15));
+      } catch (_) {}
+
+      // 2. If web endpoint didn't connect, try app endpoint with signature
+      if (res == null || res.statusCode != 200) {
+        final queryParams = _buildQueryParams(nowMs);
+        final url = '$_appUrl?$queryParams&_rticket=$nowMs';
+        final sig = DolaSigner.sign(url, timestamp: nowMs ~/ 1000);
+        final headers = _buildAppHeaders(nowMs, sig);
+        res = await http
+            .post(Uri.parse(url), headers: headers, body: bodyBytes)
+            .timeout(const Duration(seconds: 15));
+      }
+
+      final agwLogin = res.headers['x-tt-agw-login'];
+      final body = res.body;
+
+      if (agwLogin == '0' ||
+          body.contains('"error_msg":"login invalid"') ||
+          body.contains('"error_code":710012001')) {
+        throw const DolaApiException(
+            'Dola rejected cookies: login invalid. Please log in to https://www.dola.com in your browser and export fresh cookies.');
+      }
+
+      if (body.contains('STREAM_ERROR')) {
+        final errorMatch = RegExp(r'"error_msg"\s*:\s*"([^"]+)"').firstMatch(body);
+        final msg = errorMatch?.group(1) ?? 'Session error';
+        throw DolaApiException('Dola returned error: $msg');
+      }
 
       if (res.statusCode == 200) {
         return true;
       }
-      throw DolaApiException('HTTP ${res.statusCode}: ${res.body}');
+      throw DolaApiException('HTTP ${res.statusCode}: $body');
     } catch (e) {
       if (e is DolaApiException) rethrow;
       throw DolaApiException('Connection test failed: $e');
@@ -364,31 +601,27 @@ class DolaApi {
     // Formulate a high-directive prompt for Dola's generation engine
     var fullPrompt = prompt.trim();
     final lower = fullPrompt.toLowerCase();
-    final needsPrefix = !lower.contains('generate an image') &&
-        !lower.contains('draw an image') &&
-        !lower.contains('create an image') &&
+    final needsPrefix = !lower.startsWith('draw') &&
+        !lower.startsWith('generate') &&
+        !lower.startsWith('create') &&
+        !lower.startsWith('paint') &&
         !lower.contains('image of');
 
     if (needsPrefix) {
-      fullPrompt = 'Generate an image: $fullPrompt';
+      fullPrompt = 'Draw an image: $fullPrompt';
     }
 
     if (aspectRatio != null && aspectRatio.isNotEmpty && !lower.contains('aspect ratio')) {
-      fullPrompt += ', aspect ratio $aspectRatio';
+      fullPrompt += ' (aspect ratio: $aspectRatio)';
     }
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final queryParams = _buildQueryParams(nowMs);
-    final url = '$_baseUrl?$queryParams&_rticket=$nowMs';
-    final sig = DolaSigner.sign(url, timestamp: nowMs ~/ 1000);
-
-    final headers = _buildHeaders(nowMs, sig);
     final payload = _buildPayload(
       text: fullPrompt,
       conversationId: '',
       lastMessageIndex: 0,
       lastSectionId: '',
-      localConvId: '',
+      localConvId: 'ais_$nowMs',
     );
 
     final submitEnd = DateTime.now();
@@ -398,14 +631,30 @@ class DolaApi {
 
     final client = http.Client();
     try {
-      final request = http.Request('POST', Uri.parse(url));
-      request.headers.addAll(headers);
+      // Create request: try web endpoint
+      http.Request request = http.Request('POST', Uri.parse(_webUrl));
+      request.headers.addAll(_buildWebHeaders());
       request.body = jsonEncode(payload);
 
-      final streamedResponse = await client.send(request).timeout(
-            const Duration(seconds: 120),
-            onTimeout: () => throw const DolaApiException('Dola AI request timed out.'),
-          );
+      http.StreamedResponse streamedResponse;
+      try {
+        streamedResponse = await client.send(request).timeout(
+              const Duration(seconds: 120),
+              onTimeout: () => throw const DolaApiException('Dola AI request timed out.'),
+            );
+      } catch (e) {
+        // Fallback to app endpoint with signature if web endpoint failed to connect
+        final queryParams = _buildQueryParams(nowMs);
+        final url = '$_appUrl?$queryParams&_rticket=$nowMs';
+        final sig = DolaSigner.sign(url, timestamp: nowMs ~/ 1000);
+        request = http.Request('POST', Uri.parse(url));
+        request.headers.addAll(_buildAppHeaders(nowMs, sig));
+        request.body = jsonEncode(payload);
+        streamedResponse = await client.send(request).timeout(
+              const Duration(seconds: 120),
+              onTimeout: () => throw const DolaApiException('Dola AI request timed out.'),
+            );
+      }
 
       if (streamedResponse.statusCode != 200) {
         final body = await streamedResponse.stream.bytesToString();
@@ -436,6 +685,18 @@ class DolaApi {
             if (dataStr.isNotEmpty && dataStr != '{}') {
               try {
                 final json = jsonDecode(dataStr);
+
+                // Check for server error events
+                if (currentEvent == 'STREAM_ERROR') {
+                  final msg = json['error_msg']?.toString() ?? 'Stream error';
+                  final code = json['error_code']?.toString() ?? '';
+                  if (msg.contains('login invalid') || code == '710012001') {
+                    throw const DolaApiException(
+                        'Dola rejected session: login invalid. Please log in to https://www.dola.com in your browser and export fresh cookies.');
+                  }
+                  throw DolaApiException('Dola error ($code): $msg');
+                }
+
                 final img = _extractImageUrlFromJson(currentEvent, json);
                 if (img != null && img.isNotEmpty) {
                   foundImageUrl = img;
@@ -450,7 +711,9 @@ class DolaApi {
                     break;
                   }
                 }
-              } catch (_) {}
+              } catch (e) {
+                if (e is DolaApiException) rethrow;
+              }
             }
           }
         }
@@ -464,7 +727,7 @@ class DolaApi {
       if (foundImageUrl == null || foundImageUrl.isEmpty) {
         final reply = textBuffer.toString().trim();
         if (reply.isNotEmpty) {
-          throw DolaApiException('Dola replied without generating an image: $reply');
+          throw DolaApiException('Dola replied: "$reply"');
         }
         throw const DolaApiException(
             'No image returned by Dola AI. Check your cookies or try a different prompt.');
@@ -547,6 +810,137 @@ class DolaApi {
     );
   }
 
+  /// Generates an image using Dola AI text-to-image with account pooling & automatic failover.
+  static Future<GenerationResult> textToImageWithPool({
+    required String prompt,
+    String? modelId,
+    String? aspectRatio,
+    String? resolution,
+    String? format,
+    int? seed,
+    void Function(String status)? onStatus,
+    void Function(String status, Duration elapsed)? onProgress,
+  }) async {
+    final pool = DolaPool.instance;
+    if (pool.isEmpty) {
+      final single = await DolaStore.load();
+      if (!single.isValid) {
+        throw const DolaApiException(
+            'No Dola accounts found. Please add Dola cookies in Settings.');
+      }
+      return DolaApi(single).textToImage(
+        prompt: prompt,
+        modelId: modelId,
+        aspectRatio: aspectRatio,
+        resolution: resolution,
+        format: format,
+        seed: seed,
+        onStatus: onStatus,
+        onProgress: onProgress,
+      );
+    }
+
+    final totalAccounts = pool.count;
+    dynamic lastError;
+
+    for (var attempt = 0; attempt < totalAccounts; attempt++) {
+      final session = pool.nextSession();
+      if (session == null || !session.isValid) continue;
+
+      if (totalAccounts > 1) {
+        onStatus?.call('Using account ${pool.currentIndex + 1}/$totalAccounts...');
+      }
+
+      try {
+        final api = DolaApi(session);
+        return await api.textToImage(
+          prompt: prompt,
+          modelId: modelId,
+          aspectRatio: aspectRatio,
+          resolution: resolution,
+          format: format,
+          seed: seed,
+          onStatus: onStatus,
+          onProgress: onProgress,
+        );
+      } catch (e) {
+        lastError = e;
+        if (attempt < totalAccounts - 1) {
+          onStatus?.call('Account failed, trying next account in pool...');
+        }
+      }
+    }
+
+    throw lastError ?? const DolaApiException('All Dola pool accounts failed.');
+  }
+
+  /// Generates an image using reference images with account pooling & automatic failover.
+  static Future<GenerationResult> imageToImageWithPool({
+    required String prompt,
+    String? modelId,
+    required List<String> referenceUrls,
+    required String aspectRatio,
+    required String resolution,
+    required String format,
+    int? seed,
+    void Function(String status)? onStatus,
+    void Function(String status, Duration elapsed)? onProgress,
+  }) async {
+    final pool = DolaPool.instance;
+    if (pool.isEmpty) {
+      final single = await DolaStore.load();
+      if (!single.isValid) {
+        throw const DolaApiException(
+            'No Dola accounts found. Please add Dola cookies in Settings.');
+      }
+      return DolaApi(single).imageToImage(
+        prompt: prompt,
+        modelId: modelId,
+        referenceUrls: referenceUrls,
+        aspectRatio: aspectRatio,
+        resolution: resolution,
+        format: format,
+        seed: seed,
+        onStatus: onStatus,
+        onProgress: onProgress,
+      );
+    }
+
+    final totalAccounts = pool.count;
+    dynamic lastError;
+
+    for (var attempt = 0; attempt < totalAccounts; attempt++) {
+      final session = pool.nextSession();
+      if (session == null || !session.isValid) continue;
+
+      if (totalAccounts > 1) {
+        onStatus?.call('Using account ${pool.currentIndex + 1}/$totalAccounts...');
+      }
+
+      try {
+        final api = DolaApi(session);
+        return await api.imageToImage(
+          prompt: prompt,
+          modelId: modelId,
+          referenceUrls: referenceUrls,
+          aspectRatio: aspectRatio,
+          resolution: resolution,
+          format: format,
+          seed: seed,
+          onStatus: onStatus,
+          onProgress: onProgress,
+        );
+      } catch (e) {
+        lastError = e;
+        if (attempt < totalAccounts - 1) {
+          onStatus?.call('Account failed, trying next account in pool...');
+        }
+      }
+    }
+
+    throw lastError ?? const DolaApiException('All Dola pool accounts failed.');
+  }
+
   static String _buildQueryParams(int nowMs) {
     return 'device_platform=android&os=android&ssmix=a'
         '&cdid=ee3c4d85-c8f0-4c57-8027-1ec83293a5d5&channel=googleplay&aid=489823'
@@ -561,7 +955,20 @@ class DolaApi {
         '&flow_im_arch=v2&is_retry=0';
   }
 
-  Map<String, String> _buildHeaders(int nowMs, Map<String, String> sig) {
+  Map<String, String> _buildWebHeaders() {
+    return {
+      'Host': 'www.dola.com',
+      'Origin': 'https://www.dola.com',
+      'Referer': 'https://www.dola.com/chat/',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+      'Cookie': session.cookieHeader,
+    };
+  }
+
+  Map<String, String> _buildAppHeaders(int nowMs, Map<String, String> sig) {
     return {
       'Host': 'api16-normal-i18n-myb.dola.com',
       'Connection': 'keep-alive',
@@ -592,6 +999,7 @@ class DolaApi {
   }) {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final msgId = 'ais_${Random().nextInt(10000000)}';
+    final uidPrefix = session.uid.isNotEmpty ? session.uid : 'dola_user';
 
     return {
       'client_meta': {
@@ -601,7 +1009,7 @@ class DolaApi {
         'history_message_list': [],
         'last_message_index': lastMessageIndex,
         'last_section_id': lastSectionId,
-        'local_conversation_id': localConvId,
+        'local_conversation_id': localConvId.isNotEmpty ? localConvId : 'ais_$nowMs',
         'scene_type': 0,
         'section_id': '',
       },
@@ -639,6 +1047,7 @@ class DolaApi {
         'agent_mode': 2,
         'answer_with_suggest': true,
         'click_clear_context': false,
+        'unique_key': '${uidPrefix}_$msgId',
       },
     };
   }
@@ -683,16 +1092,30 @@ class DolaApi {
         if (val.contains('.ibyteimg.com') ||
             val.contains('.ciciai.com') ||
             val.contains('.dola.com') ||
-            val.contains('tos-mya-') ||
+            val.contains('.doubao.com') ||
+            val.contains('tos-') ||
             (val.startsWith('http') &&
-                (val.contains('.png') || val.contains('.jpg') || val.contains('.webp')))) {
+                (val.contains('.png') ||
+                    val.contains('.jpg') ||
+                    val.contains('.jpeg') ||
+                    val.contains('.webp')))) {
           return val;
         }
       } else if (val is Map) {
+        // Direct image properties
         for (final k in ['origin_url', 'tiny_url', 'url', 'uri', 'download_url']) {
-          if (val[k] is String && (val[k] as String).startsWith('http')) {
-            return val[k] as String;
+          final v = val[k];
+          if (v is String && v.startsWith('http')) {
+            return v;
           }
+        }
+        if (val['image_ori'] is Map) {
+          final u = val['image_ori']['url'];
+          if (u is String && u.startsWith('http')) return u;
+        }
+        if (val['image_thumb'] is Map) {
+          final u = val['image_thumb']['url'];
+          if (u is String && u.startsWith('http')) return u;
         }
         for (final sub in val.values) {
           final found = checkValue(sub);

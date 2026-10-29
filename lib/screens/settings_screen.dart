@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../app_theme.dart';
 import '../cloudinary_api.dart';
@@ -73,8 +76,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _dolaObscure = true;
   bool _dolaSaving = false;
   bool _dolaTesting = false;
+  bool _dolaTestingAll = false;
+  String? _dolaTestingMessage;
   String? _dolaTestResult;
   bool _dolaTestOk = false;
+  bool _dolaAutoRotate = true;
+  Map<int, String> _dolaTestStatuses = {};
   DolaSession? _dolaSession;
 
   @override
@@ -320,34 +327,139 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadDola() async {
     try {
+      await DolaPool.instance.loadFromStore();
+      final pool = DolaPool.instance;
       final raw = await DolaStore.load();
+      final autoRotate = await AppPrefs.dolaAutoRotate();
       if (!mounted) return;
       setState(() {
-        _dolaCtrl.text = raw;
-        _dolaSession = DolaSession.fromString(raw);
+        _dolaAutoRotate = autoRotate;
+        if (pool.isNotEmpty) {
+          _dolaSession = pool.currentSession;
+        } else if (raw.isNotEmpty) {
+          _dolaCtrl.text = raw;
+          _dolaSession = DolaSession.fromString(raw);
+          if (_dolaSession!.isValid) {
+            pool.addSession(_dolaSession!);
+          }
+        }
       });
     } catch (_) {}
   }
 
-  Future<void> _saveDola() async {
-    final raw = _dolaCtrl.text.trim();
-    setState(() => _dolaSaving = true);
+  Future<void> _importDolaFile() async {
     try {
-      await DolaStore.save(raw);
-      final parsed = DolaSession.fromString(raw);
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['txt', 'json'],
+        withData: true,
+      );
+      if (res == null || res.files.isEmpty) return;
+
+      final file = res.files.first;
+      String content = '';
+      if (file.bytes != null) {
+        content = utf8.decode(file.bytes!);
+      } else if (file.path != null) {
+        content = await File(file.path!).readAsString();
+      }
+
+      if (content.trim().isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected file is empty.')),
+        );
+        return;
+      }
+
+      final parsedList = DolaSession.parseBulk(content);
+      if (parsedList.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'No valid Dola sessions (with sessionid) found in file.')),
+        );
+        return;
+      }
+
+      final pool = DolaPool.instance;
+      final beforeCount = pool.count;
+      pool.addSessions(parsedList);
+      await pool.saveToStore();
+
+      if (pool.isNotEmpty) {
+        await DolaStore.save(pool.sessions.first.rawText.isNotEmpty
+            ? pool.sessions.first.rawText
+            : pool.sessions.first.cookieHeader);
+      }
+
+      final added = pool.count - beforeCount;
       if (!mounted) return;
       setState(() {
-        _dolaSession = parsed;
+        _dolaSession = pool.currentSession;
+        _dolaTestResult = 'Imported $added new account(s). Total: ${pool.count}';
+        _dolaTestOk = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Successfully imported $added account(s)! Total in pool: ${pool.count}'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveDola() async {
+    final raw = _dolaCtrl.text.trim();
+    if (raw.isEmpty) {
+      await _clearDola();
+      return;
+    }
+    setState(() => _dolaSaving = true);
+    try {
+      final parsedList = DolaSession.parseBulk(raw);
+      if (parsedList.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _dolaSaving = false;
+          _dolaTestResult = 'Warning: sessionid cookie not found in input.';
+          _dolaTestOk = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('No valid sessionid found. Please check format.')),
+        );
+        return;
+      }
+
+      final pool = DolaPool.instance;
+      final beforeCount = pool.count;
+      pool.addSessions(parsedList);
+      await pool.saveToStore();
+
+      await DolaStore.save(raw);
+      _dolaCtrl.clear();
+
+      if (!mounted) return;
+      setState(() {
+        _dolaSession = pool.currentSession;
         _dolaSaving = false;
-        _dolaTestResult = parsed.isValid
-            ? 'Session saved: ${parsed.summary}'
-            : (raw.isEmpty ? null : 'Warning: sessionid cookie not found.');
-        _dolaTestOk = parsed.isValid;
+        final added = pool.count - beforeCount;
+        _dolaTestResult = added > 0
+            ? 'Added $added account(s). Total in pool: ${pool.count}'
+            : 'Pool updated. Total in pool: ${pool.count}';
+        _dolaTestOk = true;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(raw.isEmpty
-            ? 'Dola AI session cleared.'
-            : 'Dola AI session cookies saved.'),
+        content: Text(
+            'Dola pool updated! (${pool.count} active account${pool.count == 1 ? '' : 's'})'),
       ));
     } catch (e) {
       if (!mounted) return;
@@ -396,18 +508,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testAllDola() async {
+    final pool = DolaPool.instance;
+    if (pool.isEmpty) {
+      final raw = _dolaCtrl.text.trim();
+      if (raw.isNotEmpty) {
+        await _testDola();
+        return;
+      }
+      setState(() {
+        _dolaTestOk = false;
+        _dolaTestResult = 'No accounts to test. Add or import cookies first.';
+      });
+      return;
+    }
+
+    setState(() {
+      _dolaTestingAll = true;
+      _dolaTestingMessage = 'Testing accounts...';
+      _dolaTestStatuses.clear();
+    });
+
+    try {
+      final results = await pool.testAll(
+        onProgress: (idx, total, st) {
+          if (mounted) {
+            setState(() {
+              _dolaTestingMessage = 'Testing account $idx of $total...';
+            });
+          }
+        },
+      );
+      if (!mounted) return;
+      final activeCount = results.values.where((v) => v == 'Active').length;
+      setState(() {
+        _dolaTestingAll = false;
+        _dolaTestingMessage = null;
+        _dolaTestStatuses = results;
+        _dolaTestOk = activeCount > 0;
+        _dolaTestResult =
+            '$activeCount / ${pool.count} accounts active & responsive.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _dolaTestingAll = false;
+        _dolaTestingMessage = null;
+        _dolaTestOk = false;
+        _dolaTestResult = 'Test error: $e';
+      });
+    }
+  }
+
+  Future<void> _removeDolaAccount(int index) async {
+    final pool = DolaPool.instance;
+    pool.removeAt(index);
+    await pool.saveToStore();
+    if (pool.isEmpty) {
+      await DolaStore.clear();
+      _dolaSession = null;
+    } else {
+      _dolaSession = pool.currentSession;
+      await DolaStore.save(pool.sessions.first.rawText.isNotEmpty
+          ? pool.sessions.first.rawText
+          : pool.sessions.first.cookieHeader);
+    }
+    _dolaTestStatuses.remove(index);
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Account removed from pool.')),
+    );
+  }
+
   Future<void> _clearDola() async {
+    final pool = DolaPool.instance;
+    pool.clear();
+    await pool.saveToStore();
+    await DolaStore.clear();
     setState(() {
       _dolaCtrl.clear();
       _dolaSession = null;
       _dolaTestResult = null;
+      _dolaTestStatuses.clear();
     });
-    try {
-      await DolaStore.clear();
-    } catch (_) {}
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Dola AI session cleared.')));
+        const SnackBar(content: Text('All Dola AI sessions cleared.')));
   }
 
   Future<void> _loadGeminiWeb() async {
@@ -651,32 +837,166 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _dolaCard(ColorScheme scheme) {
-    final hasSession = _dolaSession?.isValid == true;
+    final pool = DolaPool.instance;
+    final hasSession = pool.isNotEmpty || (_dolaSession?.isValid == true);
+    final count = pool.isNotEmpty ? pool.count : (hasSession ? 1 : 0);
+
     return SectionCard(
       icon: Icons.cookie_outlined,
       title: 'Dola AI session (dola.com)',
       subtitle: 'Free text-to-image & image-to-image engine',
       trailing: StatusPill(
-        label: hasSession ? 'Ready' : 'Not configured',
-        color: hasSession ? AppTheme.success : AppTheme.warning,
-        icon: hasSession ? Icons.check_circle : Icons.warning_amber_rounded,
+        label: count > 0
+            ? '$count Account${count == 1 ? '' : 's'} Ready'
+            : 'Not configured',
+        color: count > 0 ? AppTheme.success : AppTheme.warning,
+        icon: count > 0 ? Icons.check_circle : Icons.warning_amber_rounded,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const HintText(
-            'Export your cookies from https://www.dola.com using the '
-            'Cookie-Editor browser extension (JSON or Header string format) '
-            'and paste them below. The app uses your session to generate images for free.',
+            'Export cookies from https://www.dola.com using Cookie-Editor. '
+            'Import a .txt or .json file with bulk cookies, or paste below. '
+            'The engine rotates accounts automatically and fails over on limits.',
           ),
           const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.sync_alt_outlined),
+            title: const Text('Auto-rotate accounts'),
+            subtitle: const Text(
+                'Distribute image generations across all accounts in the pool.'),
+            value: _dolaAutoRotate,
+            onChanged: (v) async {
+              setState(() => _dolaAutoRotate = v);
+              DolaPool.instance.autoRotate = v;
+              await AppPrefs.setDolaAutoRotate(v);
+            },
+          ),
+          const SizedBox(height: 8),
+          ButtonGroup(children: [
+            AppButton(
+              label: 'Import .txt / .json file',
+              icon: Icons.upload_file_outlined,
+              kind: AppButtonKind.tonal,
+              onPressed: _importDolaFile,
+            ),
+            AppButton(
+              label: _dolaTestingAll
+                  ? (_dolaTestingMessage ?? 'Testing...')
+                  : 'Test All (${pool.count})',
+              icon: Icons.wifi_tethering_outlined,
+              kind: AppButtonKind.outline,
+              loading: _dolaTestingAll,
+              onPressed: pool.isEmpty ? null : _testAllDola,
+            ),
+          ]),
+          if (pool.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Connected Accounts (${pool.count})',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                Text(
+                  _dolaAutoRotate ? 'Auto-rotation ON' : 'Fixed account',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: _dolaAutoRotate
+                        ? AppTheme.success
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: scheme.outlineVariant),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: pool.sessions.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: scheme.outlineVariant),
+                itemBuilder: (context, i) {
+                  final s = pool.sessions[i];
+                  final testSt = _dolaTestStatuses[i];
+                  final isCurrent = pool.currentIndex == i;
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: isCurrent
+                          ? AppTheme.seed.withValues(alpha: 0.2)
+                          : scheme.surfaceContainerHighest,
+                      child: Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isCurrent ? FontWeight.bold : FontWeight.normal,
+                          color: isCurrent ? AppTheme.seed : scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      s.uid.isNotEmpty
+                          ? 'User ID: ${s.uid}'
+                          : 'Account #${i + 1}',
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Region: ${s.carrierRegion} • Session: ${s.sessionId.length > 8 ? '${s.sessionId.substring(0, 8)}...' : s.sessionId}',
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.onSurfaceVariant),
+                        ),
+                        if (testSt != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              testSt,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: testSt == 'Active'
+                                    ? AppTheme.success
+                                    : scheme.error,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      tooltip: 'Remove account',
+                      onPressed: () => _removeDolaAccount(i),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
           TextField(
             controller: _dolaCtrl,
-            maxLines: 4,
+            maxLines: 3,
             obscureText: _dolaObscure,
             decoration: InputDecoration(
-              labelText: 'dola.com Cookies (JSON, Header string, or Netscape)',
-              hintText: '[{"name":"sessionid","value":"..."}, ...] or sessionid=...',
+              labelText: 'Paste Dola Cookie(s) (Single or Bulk .txt)',
+              hintText:
+                  'sessionid=... or JSON cookies or multiple accounts separated by lines',
               prefixIcon: const Icon(Icons.vpn_key_outlined),
               suffixIcon: IconButton(
                 tooltip: _dolaObscure ? 'Show' : 'Hide',
@@ -687,21 +1007,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          if (_dolaSession != null && _dolaSession!.isValid) ...[
-            const SizedBox(height: 8),
-            HintText(_dolaSession!.summary, icon: Icons.info_outline),
-          ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           ButtonGroup(children: [
             AppButton(
-              label: 'Save session',
-              icon: Icons.save_outlined,
+              label: 'Add to pool / Save',
+              icon: Icons.add_circle_outline,
               loading: _dolaSaving,
               onPressed: _saveDola,
             ),
             AppButton(
-              label: 'Test connection',
-              icon: Icons.wifi_tethering_outlined,
+              label: 'Test input',
+              icon: Icons.check_circle_outline,
               kind: AppButtonKind.outline,
               loading: _dolaTesting,
               onPressed: _testDola,
@@ -716,16 +1032,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : Icons.error_outline,
             ),
           ],
-          const SizedBox(height: 6),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: _clearDola,
-              icon: const Icon(Icons.delete_outline, size: 18),
-              label: const Text('Clear session'),
-              style: TextButton.styleFrom(foregroundColor: scheme.error),
+          if (pool.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _clearDola,
+                icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                label: const Text('Clear all accounts'),
+                style: TextButton.styleFrom(foregroundColor: scheme.error),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -62,6 +64,7 @@ class DolaStore {
 
   static const _storage = FlutterSecureStorage();
   static const _kSession = 'dola_session';
+  static const _kBulkSessions = 'dola_bulk_sessions';
 
   /// Raw session data (JSON, header string, or Netscape format).
   static Future<String> load() async =>
@@ -71,8 +74,38 @@ class DolaStore {
     await _storage.write(key: _kSession, value: sessionData.trim());
   }
 
+  /// Loads list of bulk raw sessions from secure storage.
+  static Future<List<String>> loadBulk() async {
+    final raw = await _storage.read(key: _kBulkSessions);
+    if (raw == null || raw.trim().isEmpty) {
+      final single = await load();
+      if (single.trim().isNotEmpty) return [single.trim()];
+      return [];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.map((e) => e.toString()).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Saves list of bulk raw sessions.
+  static Future<void> saveBulk(List<String> rawSessions) async {
+    final clean =
+        rawSessions.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    await _storage.write(key: _kBulkSessions, value: jsonEncode(clean));
+    if (clean.isNotEmpty) {
+      await save(clean.first);
+    } else {
+      await clear();
+    }
+  }
+
   static Future<void> clear() async {
     await _storage.delete(key: _kSession);
+    await _storage.delete(key: _kBulkSessions);
   }
 }
 
@@ -148,4 +181,10 @@ class AppPrefs {
 
   static Future<void> setLastDolaModel(String v) async =>
       (await _p()).setString('last_dola_model', v);
+
+  static Future<bool> dolaAutoRotate() async =>
+      (await _p()).getBool('dola_auto_rotate') ?? true;
+
+  static Future<void> setDolaAutoRotate(bool v) async =>
+      (await _p()).setBool('dola_auto_rotate', v);
 }

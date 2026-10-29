@@ -108,8 +108,9 @@ class _HomeScreenState extends State<HomeScreen> {
     int exportIndex = 0;
     try {
       engine = await AppPrefs.activeEngine();
+      await DolaPool.instance.loadFromStore();
       final dolaRaw = await DolaStore.load();
-      dolaSession = DolaSession.fromString(dolaRaw);
+      dolaSession = DolaPool.instance.currentSession ?? DolaSession.fromString(dolaRaw);
       lastDola = await AppPrefs.lastDolaModel();
       ratio = await AppPrefs.lastRatio();
       res = await AppPrefs.lastResolution();
@@ -177,7 +178,9 @@ class _HomeScreenState extends State<HomeScreen> {
       await _openSettings();
       return;
     }
-    if (isDola && (_dolaSession == null || !_dolaSession!.isValid)) {
+    final hasDola = DolaPool.instance.isNotEmpty ||
+        (_dolaSession != null && _dolaSession!.isValid);
+    if (isDola && !hasDola) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -209,9 +212,8 @@ class _HomeScreenState extends State<HomeScreen> {
       GenerationResult r;
 
       if (isDola) {
-        final dolaApi = DolaApi(_dolaSession!);
         if (_tab == 0) {
-          r = await dolaApi.textToImage(
+          r = await DolaApi.textToImageWithPool(
             prompt: prompt,
             modelId: _dolaModel,
             aspectRatio: _ratio,
@@ -230,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
           );
           await AppPrefs.setLastDolaModel(_dolaModel);
         } else {
-          r = await dolaApi.imageToImage(
+          r = await DolaApi.imageToImageWithPool(
             prompt: prompt,
             modelId: _dolaModel,
             referenceUrls: refs,

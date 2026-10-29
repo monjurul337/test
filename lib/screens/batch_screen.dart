@@ -350,8 +350,9 @@ class _BatchScreenState extends State<BatchScreen> {
     try {
       creds = await CredentialStore.load();
       engine = await AppPrefs.activeEngine();
+      await DolaPool.instance.loadFromStore();
       final dolaRaw = await DolaStore.load();
-      dolaSession = DolaSession.fromString(dolaRaw);
+      dolaSession = DolaPool.instance.currentSession ?? DolaSession.fromString(dolaRaw);
       exportIndex = await AppPrefs.lastExport();
       gridCols = await AppPrefs.gridCols();
     } catch (_) {}
@@ -471,7 +472,9 @@ class _BatchScreenState extends State<BatchScreen> {
       await _openSettings();
       return;
     }
-    if (isDola && (_dolaSession == null || !_dolaSession!.isValid)) {
+    final hasDola = DolaPool.instance.isNotEmpty ||
+        (_dolaSession != null && _dolaSession!.isValid);
+    if (isDola && !hasDola) {
       _snack('Paste your dola.com cookies in Settings first.');
       await _openSettings();
       return;
@@ -940,8 +943,6 @@ class _BatchScreenState extends State<BatchScreen> {
   Future<void> _runJobsAwake(List<BatchJob> jobs) async {
     final isDola = _engine == 'dola';
     final api = CloudinaryApi(_creds);
-    final dolaApi =
-        isDola && _dolaSession != null ? DolaApi(_dolaSession!) : null;
     final seedBase = int.tryParse(_seedCtrl.text.trim());
     // No seed entered: use a fresh random seed per job. Cloudinary returns
     // the same cached image for an identical seedless request, which made
@@ -977,7 +978,7 @@ class _BatchScreenState extends State<BatchScreen> {
     /// Live "queued / rendering 12s" line for the running job.
     void progress(BatchJob job, String st, Duration t) {
       if (!mounted) return;
-      final what = st == 'pending' ? 'queued on Cloudinary' : 'rendering';
+      final what = st == 'pending' ? 'queued' : 'rendering';
       setState(() => _current =
           '${_short(job.prompt)} - ${job.variantLabel} - $what ${GenerationTiming.fmt(t)}');
     }
@@ -986,14 +987,14 @@ class _BatchScreenState extends State<BatchScreen> {
     /// when the image was post-processed client-side) or throws.
     Future<({GenerationResult result, Uint8List? localBytes})> runOnce(
         BatchJob job) async {
-      if (isDola && dolaApi != null) {
+      if (isDola) {
         if (_isLandscapeJob(job)) {
           final portraitUrl = refUrls[job.refIndex];
           if (portraitUrl == null) {
             throw 'Reference portrait failed, so the companion was skipped.';
           }
           await throttleSubmit();
-          final res = await dolaApi.imageToImage(
+          final res = await DolaApi.imageToImageWithPool(
             prompt: _jobPrompt(job),
             referenceUrls: [portraitUrl],
             aspectRatio: '4:3',
@@ -1016,7 +1017,7 @@ class _BatchScreenState extends State<BatchScreen> {
         }
         await throttleSubmit();
         if (job.isAnchor) {
-          final r = await dolaApi.textToImage(
+          final r = await DolaApi.textToImageWithPool(
             prompt: _jobPrompt(job),
             aspectRatio: _ratio,
             resolution: _resolution,
@@ -1030,7 +1031,7 @@ class _BatchScreenState extends State<BatchScreen> {
         if (refFailed.contains(job.refIndex)) {
           throw 'Reference image failed, so this variant was skipped.';
         }
-        final r = await dolaApi.imageToImage(
+        final r = await DolaApi.imageToImageWithPool(
           prompt: _jobPrompt(job),
           referenceUrls: [refUrls[job.refIndex]!],
           aspectRatio: _ratio,

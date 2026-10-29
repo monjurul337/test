@@ -4,6 +4,7 @@ import 'app_theme.dart';
 import 'screens/home_screen.dart';
 import 'secure_store.dart';
 import 'gemini_web.dart';
+import 'dola_api.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +12,9 @@ Future<void> main() async {
     final p = await AppPrefs.prefs();
     GeminiWebClient.allowAppRotation =
         p.getBool('gemini_app_rotation') ?? false;
+  } catch (_) {}
+  try {
+    await DolaPool.instance.loadFromStore();
   } catch (_) {}
   runApp(const AiImageStudioMhApp());
 }

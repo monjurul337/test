@@ -39,6 +39,81 @@ void main() {
       expect(session.isValid, isFalse);
       expect(session.sessionId, '');
     });
+
+    test('parses bulk cookies from multiline text file', () {
+      const bulkText = '''
+# Account 1
+sessionid=account_1_sess; odin_tt=odin_1; store-idc=mya; store-country-code=bd
+
+---
+# Account 2
+sessionid=account_2_sess; odin_tt=odin_2; store-idc=maliva; store-country-code=us
+
+sessionid=account_3_sess; store-idc=alisg
+''';
+      final sessions = DolaSession.parseBulk(bulkText);
+      expect(sessions.length, 3);
+      expect(sessions[0].sessionId, 'account_1_sess');
+      expect(sessions[0].carrierRegion, 'bd');
+      expect(sessions[1].sessionId, 'account_2_sess');
+      expect(sessions[1].carrierRegion, 'us');
+      expect(sessions[2].sessionId, 'account_3_sess');
+    });
+
+    test('parses bulk JSON array of cookie lists', () {
+      const bulkJson = '''
+[
+  [
+    {"name": "sessionid", "value": "json_sess_1"},
+    {"name": "store-country-code", "value": "us"}
+  ],
+  [
+    {"name": "sessionid", "value": "json_sess_2"},
+    {"name": "store-country-code", "value": "bd"}
+  ]
+]
+''';
+      final sessions = DolaSession.parseBulk(bulkJson);
+      expect(sessions.length, 2);
+      expect(sessions[0].sessionId, 'json_sess_1');
+      expect(sessions[1].sessionId, 'json_sess_2');
+    });
+
+    test('deduplicates duplicate session IDs in bulk import', () {
+      const duplicateText = '''
+sessionid=same_session_id; store-idc=mya
+sessionid=same_session_id; store-idc=mya
+sessionid=diff_session_id; store-idc=maliva
+''';
+      final sessions = DolaSession.parseBulk(duplicateText);
+      expect(sessions.length, 2);
+    });
+  });
+
+  group('DolaPool management', () {
+    test('manages multi-account rotation and round-robin', () {
+      final pool = DolaPool.instance;
+      pool.clear();
+      pool.autoRotate = true;
+
+      final s1 = DolaSession.fromString('sessionid=sess_one; store-idc=mya');
+      final s2 = DolaSession.fromString('sessionid=sess_two; store-idc=maliva');
+
+      pool.addSession(s1);
+      pool.addSession(s2);
+
+      expect(pool.count, 2);
+      expect(pool.nextSession()?.sessionId, 'sess_one');
+      expect(pool.nextSession()?.sessionId, 'sess_two');
+      expect(pool.nextSession()?.sessionId, 'sess_one');
+
+      pool.removeAt(0);
+      expect(pool.count, 1);
+      expect(pool.nextSession()?.sessionId, 'sess_two');
+
+      pool.clear();
+      expect(pool.isEmpty, isTrue);
+    });
   });
 
   group('DolaSigner', () {
