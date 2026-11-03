@@ -1,0 +1,9 @@
+Copy into GitHub → Settings → General → About (repository).
+
+Description:
+Anti-detect browser · antidetect browser — Multilogin vs GoLogin, AdsPower, Kameleo, Dolphin Anty, Octo Browser. Fingerprint & proxy guides by @Anti-detect
+
+Website:
+https://multilogin.com/pricing/?utm_source=saas&utm_medium=partner&a_aid=saas&a_bid=f5fad549
+
+Topics: paste every line from TOPICS.txt (max 20 topics on GitHub)

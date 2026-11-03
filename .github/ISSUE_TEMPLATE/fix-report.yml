@@ -1,0 +1,22 @@
+name: Correction / broken link
+description: Report a factual error or dead link
+title: "[Fix] "
+labels: ["bug"]
+body:
+  - type: input
+    id: file
+    attributes:
+      label: File path
+      placeholder: guides/multilogin-vs-gologin.md
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong?
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source (optional URL)

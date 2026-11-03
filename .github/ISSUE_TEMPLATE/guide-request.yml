@@ -1,0 +1,25 @@
+name: Guide request
+description: Request a new anti-detect browser comparison or FAQ entry
+title: "[Guide] "
+labels: ["documentation"]
+body:
+  - type: input
+    id: topic
+    attributes:
+      label: Topic / competitor
+      placeholder: e.g. Multilogin vs XYZ, proxy setup
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What should the guide cover?
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Agreement
+      options:
+        - label: I understand this repo is community-maintained by @Anti-detect, not official Multilogin
+          required: true
