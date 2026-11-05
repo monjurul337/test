@@ -1,0 +1,76 @@
+name: Build Signtech Digital (APK + Windows)
+
+# GitHub দিয়ে build: repo-তে code push করে Actions ট্যাব থেকে
+# "Run workflow" চাপলেই APK + Windows app দুটোই তৈরি হয়ে যাবে।
+# ট্যাগ (v1.0.0 জাতীয়) push করলেও auto build হবে।
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-apk:
+    name: Android Release APK (JDK 17)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: signtech-digital-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    name: Windows App
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath signtech-digital-windows.zip
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: signtech-digital-windows
+          path: signtech-digital-windows.zip
