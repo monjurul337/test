@@ -1,5 +1,0 @@
-package com.signtech.digital
-
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity: FlutterActivity()
