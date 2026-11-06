@@ -1,0 +1,149 @@
+name: Build PC Assistant (APK + Windows)
+
+# GitHub দিয়ে build: repo-তে push করলে বা Actions ট্যাব থেকে
+# "Run workflow" চাপলেই APK + Windows installer দুটোই তৈরি হয়ে যাবে।
+# ট্যাগ (v1.0.0) push করলে সরাসরি GitHub Release-এ APK ও Exe যুক্ত হবে।
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+
+jobs:
+  build-apk:
+    name: Android Release APK (JDK 17)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-assistant-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    name: Windows App & Installer
+    # windows-2022 বাধ্যতামূলক: windows-latest (2025 image) এ এখন শুধু
+    # Visual Studio 2026 থাকে, যেটা Flutter 3.24 চেনে না — সে VS 2019
+    # খুঁজে "could not find any instance of Visual Studio" error দেয়।
+    # windows-2022 runner-এ Visual Studio 2022 আছে, Flutter 3.24 সেটা
+    # ঠিকঠাক ব্যবহার করে।
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Check installer script exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path "installer\pcassistant_setup.iss")) {
+            Write-Error "installer/pcassistant_setup.iss NOT FOUND — repo-te installer folder ta upload hoy nai. Puro project (installer folder shoho) upload koro."
+            exit 1
+          }
+          Write-Host "Installer script found OK"
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            Write-Host "Inno Setup not found, installing via Chocolatey..."
+            choco install innosetup -y --no-progress
+            $iscc = @(
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+              "C:\Program Files\Inno Setup 6\ISCC.exe",
+              (Get-Command iscc -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+            ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          }
+          Write-Host "Using ISCC: $iscc"
+          & $iscc installer\pcassistant_setup.iss
+          if (!(Test-Path "installer\Output\PCAssistant-Setup-1.0.0.exe")) {
+            Write-Error "Setup exe was NOT created — uporer ISCC log dekho."
+            exit 1
+          }
+          Write-Host "Setup exe created OK:"
+          Get-Item "installer\Output\PCAssistant-Setup-1.0.0.exe" | Select-Object Name, Length
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-assistant-windows-setup
+          path: installer/Output/*.exe
+          if-no-files-found: error
+
+  create-release:
+    name: GitHub Release (on tag)
+    needs: [build-apk, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pc-assistant-apk
+          path: release-assets
+
+      - name: Download Windows Setup artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pc-assistant-windows-setup
+          path: release-assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

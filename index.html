@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maliha // AI Desktop Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #060b19;
+      --sidebar: #090e1f;
+      --card-bg: rgba(14, 23, 46, 0.75);
+      --card-border: rgba(56, 189, 248, 0.18);
+      --card-hover: rgba(56, 189, 248, 0.35);
+      --primary: #3b82f6;
+      --cyan: #00f0ff;
+      --purple: #8b5cf6;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    }
+    body {
+      background: radial-gradient(circle at 50% 30%, #0d1a3a 0%, #060b19 75%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* LEFT SIDEBAR */
+    .sidebar {
+      width: 200px;
+      height: 100vh;
+      background: var(--sidebar);
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 14px;
+      gap: 8px;
+      flex-shrink: 0;
+      z-index: 20;
+    }
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 8px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 6px;
+    }
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #ec4899, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      box-shadow: 0 0 14px rgba(236, 72, 153, 0.5);
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: #fff;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 16px;
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .nav-item:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-item.active {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.35), rgba(139, 92, 246, 0.35));
+      border: 1px solid rgba(96, 165, 250, 0.4);
+      color: #ffffff;
+      box-shadow: 0 4px 18px rgba(59, 130, 246, 0.25);
+    }
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    /* MAIN STAGE */
+    .stage {
+      flex: 1;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 28px;
+      gap: 16px;
+      position: relative;
+      overflow-y: auto;
+    }
+
+    /* TOP GREETING BUBBLE */
+    .top-greeting {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 30px;
+      padding: 6px 18px 6px 8px;
+      width: fit-content;
+      margin: 0 auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      animation: floatMsg 4s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @keyframes floatMsg {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+    .avatar-mini {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #00f0ff, #ec4899);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+    }
+    .greeting-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: #e2e8f0;
+    }
+
+    /* VIEW CONTAINERS */
+    .view-container {
+      flex: 1;
+      display: none;
+      animation: fadeIn 0.3s ease;
+      width: 100%;
+    }
+    .view-container.active-view {
+      display: flex;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 1. HOME VIEW GRID */
+    .home-grid {
+      display: grid;
+      grid-template-columns: 280px 1fr 280px;
+      gap: 20px;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+    .widget-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .widget-card:hover {
+      border-color: var(--card-hover);
+      box-shadow: 0 14px 35px rgba(0, 240, 255, 0.08);
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .card-close {
+      color: #64748b;
+      cursor: pointer;
+      font-size: 13px;
+      transition: color 0.2s;
+    }
+    .card-close:hover { color: #fff; }
+
+    /* Left widgets */
+    .left-widgets {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #cbd5e1;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .action-btn:last-child { margin-bottom: 0; }
+    .action-btn:hover {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.5);
+      color: #fff;
+      transform: translateX(4px);
+    }
+    .action-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .character-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .character-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #ec4899, #8b5cf6);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 0 16px rgba(236, 72, 153, 0.4);
+    }
+    .character-info h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .character-info .role {
+      font-size: 11px;
+      color: #38bdf8;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .character-info .tag {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Cosmic Center */
+    .center-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .cosmic-container {
+      position: relative;
+      width: 300px;
+      height: 300px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cosmic-orb {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #67e8f9 0%, #0284c7 40%, #7c3aed 75%, #1e1b4b 100%);
+      box-shadow: 0 0 50px rgba(6, 182, 212, 0.7), 0 0 100px rgba(139, 92, 246, 0.45);
+      animation: pulseSphere 3.5s ease-in-out infinite alternate, floatOrb 5s ease-in-out infinite;
+      cursor: pointer;
+      position: relative;
+      z-index: 2;
+    }
+    @keyframes pulseSphere {
+      0% { transform: scale(0.97); box-shadow: 0 0 40px rgba(6, 182, 212, 0.6); }
+      100% { transform: scale(1.03); box-shadow: 0 0 75px rgba(0, 240, 255, 0.95), 0 0 120px rgba(168, 85, 247, 0.6); }
+    }
+    @keyframes floatOrb {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .orbit-ring {
+      position: absolute;
+      width: 240px;
+      height: 95px;
+      border: 1.5px solid rgba(56, 189, 248, 0.5);
+      border-radius: 50%;
+      transform: rotateX(65deg) rotateY(25deg);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+      animation: spinOrbit 14s linear infinite;
+    }
+    .orbit-ring-2 {
+      position: absolute;
+      width: 270px;
+      height: 105px;
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      border-radius: 50%;
+      transform: rotateX(65deg) rotateY(-35deg);
+      animation: spinOrbit 18s linear infinite reverse;
+    }
+    @keyframes spinOrbit {
+      from { transform: rotateX(65deg) rotateY(25deg) rotate(0deg); }
+      to { transform: rotateX(65deg) rotateY(25deg) rotate(360deg); }
+    }
+    .voice-dock {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .waveform-wrap {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 24px;
+    }
+    .wave-line {
+      width: 3px;
+      height: 8px;
+      background: #38bdf8;
+      border-radius: 3px;
+      animation: waveBar 1.2s ease-in-out infinite;
+    }
+    .wave-line:nth-child(2) { animation-delay: 0.15s; }
+    .wave-line:nth-child(3) { animation-delay: 0.3s; }
+    .wave-line:nth-child(4) { animation-delay: 0.45s; }
+    .wave-line:nth-child(5) { animation-delay: 0.2s; }
+    .wave-line:nth-child(6) { animation-delay: 0.35s; }
+    @keyframes waveBar {
+      0%, 100% { height: 6px; }
+      50% { height: 22px; background: #c084fc; }
+    }
+    .mic-button {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.8);
+      border: 2px solid rgba(56, 189, 248, 0.5);
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.3);
+      transition: all 0.25s ease;
+    }
+    .mic-button:hover {
+      background: #00f0ff;
+      border-color: #00f0ff;
+      color: #05070f;
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.7);
+      transform: scale(1.06);
+    }
+    .listening-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+
+    /* Right widgets */
+    .right-widgets {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .world-globe {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #38bdf8, #0369a1 60%, #0f172a 100%);
+      box-shadow: inset -15px -15px 30px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.4);
+      margin: 4px auto 14px;
+    }
+    .world-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+    }
+    .bullet-red { width: 7px; height: 7px; border-radius: 50%; background: #f43f5e; box-shadow: 0 0 8px #f43f5e; }
+    .bullet-purple { width: 7px; height: 7px; border-radius: 50%; background: #a855f7; box-shadow: 0 0 8px #a855f7; }
+    .bullet-green { width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; }
+
+    .memory-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .memory-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      color: #c084fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .memory-text {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+
+    /* 2. ASSISTANT CHAT VIEW */
+    .assistant-view-layout {
+      width: 100%;
+      max-width: 880px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+    }
+    .chat-box {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding-right: 6px;
+    }
+    .chat-msg {
+      display: flex;
+      gap: 12px;
+      animation: fadeIn 0.3s ease;
+    }
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+      font-weight: 700;
+    }
+    .avatar-ai { background: linear-gradient(135deg, #ec4899, #8b5cf6); color: white; }
+    .avatar-user { background: #334155; color: white; }
+    .msg-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .msg-meta {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .msg-content {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+    .action-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .screenshot-preview-card {
+      width: 100%;
+      height: 160px;
+      background: #0b1120;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .screen-topbar {
+      height: 22px;
+      background: #1e293b;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 4px;
+    }
+    .screen-dot { width: 6px; height: 6px; border-radius: 50%; background: #64748b; }
+    .screen-body {
+      flex: 1;
+      background: radial-gradient(circle at center, #1e3a8a, #0b1120);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #93c5fd;
+      font-size: 12px;
+      font-weight: 600;
+      gap: 8px;
+    }
+
+    .cam-preview-card {
+      width: 100%;
+      height: 160px;
+      background: #0a101d;
+      border-radius: 10px;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .cam-topbar {
+      height: 22px;
+      background: rgba(239, 68, 68, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fca5a5;
+    }
+    .cam-body {
+      flex: 1;
+      background: radial-gradient(circle at center, #1e1b4b, #05070f);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #c4b5fd;
+      font-size: 12px;
+      font-weight: 600;
+      gap: 8px;
+      position: relative;
+    }
+    .cam-body::after {
+      content: "REC • STEALTH SENTRY";
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 9px;
+      color: #ef4444;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .file-preview-card {
+      margin-top: 8px;
+      padding: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .file-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .file-icon {
+      font-size: 24px;
+    }
+    .file-info h5 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .file-info span {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    /* Floating Command Bar */
+    .chat-input-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(14, 23, 46, 0.95);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 8px 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+    .chat-input-bar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 14px;
+    }
+    .btn-action {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--card-border);
+      color: #cbd5e1;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-action:hover { background: var(--primary); color: #fff; }
+    .btn-submit {
+      background: linear-gradient(135deg, #00f0ff, #3b82f6);
+      color: #05070f;
+      border: none;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s;
+    }
+    .btn-submit:hover { transform: scale(1.05); }
+
+    /* 3. MEMORY VIEW */
+    .page-wrapper {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 12px;
+    }
+    .page-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* 4. SKILLS VIEW */
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .skill-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.2s;
+    }
+    .skill-card:hover {
+      border-color: var(--card-hover);
+      transform: translateY(-2px);
+    }
+    .skill-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .skill-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .skill-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.15);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    /* 5. SETTINGS FORM */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+    }
+    .form-group input, .form-group select {
+      background: #090e1d;
+      border: 1px solid var(--card-border);
+      padding: 10px 14px;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+    .form-group input:focus {
+      border-color: #00f0ff;
+    }
+
+    /* POPUP TOAST */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      border: 1px solid #00f0ff;
+      border-radius: 30px;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      box-shadow: 0 10px 30px rgba(0, 240, 255, 0.35);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* MODAL OVERLAY & POPUP */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 7, 15, 0.78);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-box {
+      width: 100%;
+      max-width: 520px;
+      background: #0d1527;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.75), 0 0 35px rgba(0, 240, 255, 0.18);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 18px 22px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-body {
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+    .modal-footer {
+      padding: 16px 22px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      background: #090e1d;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand-logo">
+      <div class="brand-icon">✨</div>
+      <div class="brand-title">Maliha AI</div>
+    </div>
+
+    <div class="nav-item active" onclick="switchTab('home')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+      <span>Home</span>
+    </div>
+
+    <div class="nav-item" onclick="switchTab('assistant')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+      <span>Assistant</span>
+    </div>
+
+    <div class="nav-item" onclick="switchTab('memory')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      <span>Memory</span>
+    </div>
+
+    <div class="nav-item" onclick="switchTab('world')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+      <span>World</span>
+    </div>
+
+    <div class="nav-item" onclick="switchTab('skills')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      <span>Skills</span>
+    </div>
+
+    <div class="nav-item" style="margin-top:auto;" onclick="switchTab('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      <span>Settings</span>
+    </div>
+  </aside>
+
+  <!-- MAIN DASHBOARD STAGE -->
+  <main class="stage">
+
+    <!-- TOP GREETING BUBBLE -->
+    <div class="top-greeting">
+      <div class="avatar-mini">✨</div>
+      <div class="greeting-text" id="greetingText">Hello! I'm Maliha. How can I help you today?</div>
+    </div>
+
+    <!-- 1. HOME VIEW -->
+    <div id="view-home" class="view-container active-view">
+      <div class="home-grid">
+        
+        <!-- Left Column: Quick Actions & Character -->
+        <div class="left-widgets">
+          <div class="widget-card">
+            <div class="card-title">
+              <span>Quick Actions</span>
+              <span style="font-size:12px; color:#64748b;">›</span>
+            </div>
+
+            <div class="action-btn" onclick="executeQuick('Open Applications', 'open notepad')">
+              <div class="action-left">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                <span>Open Applications</span>
+              </div>
+              <span style="color:#64748b;">›</span>
+            </div>
+
+            <div class="action-btn" onclick="executeQuick('Screen Vision AI', 'explain screen')">
+              <div class="action-left">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <span>Screen Vision AI</span>
+              </div>
+              <span style="color:#64748b;">›</span>
+            </div>
+
+            <div class="action-btn" onclick="executeQuick('Stealth Webcam Sentry', 'webcam')">
+              <div class="action-left">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                <span>Stealth Webcam Sentry</span>
+              </div>
+              <span style="color:#64748b;">›</span>
+            </div>
+
+            <div class="action-btn" onclick="executeQuick('Remote File Fetcher', 'file fetch')">
+              <div class="action-left">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                <span>Remote File Fetcher</span>
+              </div>
+              <span style="color:#64748b;">›</span>
+            </div>
+
+            <div class="action-btn" onclick="executeQuick('Universal Clipboard', 'clipboard')">
+              <div class="action-left">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Universal Clipboard Sync</span>
+              </div>
+              <span style="color:#64748b;">›</span>
+            </div>
+
+            <div class="action-btn" onclick="executeQuick('Play Lo-Fi Music', 'open youtube')">
+              <div class="action-left">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                <span>Play Lo-Fi Music</span>
+              </div>
+              <span style="color:#64748b;">›</span>
+            </div>
+          </div>
+
+          <div class="widget-card">
+            <div class="character-card">
+              <div class="character-avatar">👩‍💼</div>
+              <div class="character-info">
+                <div class="role">PERSONAL AGENT</div>
+                <h4>Maliha</h4>
+                <div class="tag">Autonomous AI • Online</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center Column: Cosmic Orb -->
+        <div class="center-stage">
+          <div class="cosmic-container">
+            <div class="orbit-ring"></div>
+            <div class="orbit-ring-2"></div>
+            <div class="cosmic-orb" onclick="toggleListening()" title="Click for Voice Command"></div>
+          </div>
+
+          <div class="voice-dock">
+            <div class="waveform-wrap">
+              <div class="wave-line"></div>
+              <div class="wave-line"></div>
+              <div class="wave-line"></div>
+              <div class="wave-line"></div>
+              <div class="wave-line"></div>
+              <div class="wave-line"></div>
+            </div>
+
+            <button class="mic-button" onclick="toggleListening()">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
+
+            <span class="listening-label" id="statusLabel">Listening...</span>
+          </div>
+        </div>
+
+        <!-- Right Column: World Monitor & Memory -->
+        <div class="right-widgets">
+          <div class="widget-card" onclick="switchTab('world')" style="cursor:pointer;" title="Click to open World Monitor">
+            <div class="card-title">
+              <span>World Monitor</span>
+              <span class="card-close" onclick="event.stopPropagation(); this.closest('.widget-card').style.display='none'">✕</span>
+            </div>
+
+            <div class="world-globe"></div>
+
+            <div class="world-item">
+              <span class="bullet-red"></span>
+              <span>Top News: AI Breakthroughs</span>
+            </div>
+            <div class="world-item">
+              <span class="bullet-purple"></span>
+              <span>Global Events: Active</span>
+            </div>
+            <div class="world-item">
+              <span class="bullet-green"></span>
+              <span>Trending: Flutter & Kotlin</span>
+            </div>
+          </div>
+
+          <div class="widget-card" onclick="switchTab('memory')" style="cursor:pointer;" title="Click to open Memory">
+            <div class="card-title">
+              <span>Memory</span>
+              <span class="card-close" onclick="event.stopPropagation(); this.closest('.widget-card').style.display='none'">✕</span>
+            </div>
+
+            <div class="memory-box">
+              <div class="memory-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                </svg>
+              </div>
+              <div class="memory-text">
+                Your preferences, PC specs and context are safely synced.
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 2. ASSISTANT VIEW (Interactive Chat & Execution Stream) -->
+    <div id="view-assistant" class="view-container">
+      <div class="assistant-view-layout">
+        
+        <div class="chat-box" id="assistantChatBox">
+          <!-- Welcome Message -->
+          <div class="chat-msg">
+            <div class="msg-avatar avatar-ai">M</div>
+            <div class="msg-body">
+              <div class="msg-meta">
+                <span>Maliha Assistant</span> • <span>Now</span>
+                <span class="action-badge">NEURAL CORE READY</span>
+              </div>
+              <div class="msg-content">
+                Hey Boss! I am online and ready. Ask me anything in English or Bengali, and I will execute it directly on your Windows PC. Try the options below:
+              </div>
+            </div>
+          </div>
+
+          <!-- Sample Command Executed -->
+          <div class="chat-msg">
+            <div class="msg-avatar avatar-user">YOU</div>
+            <div class="msg-body">
+              <div class="msg-meta"><span>You</span> • <span>Just now</span></div>
+              <div class="msg-content">Take a screenshot of my PC right now</div>
+            </div>
+          </div>
+
+          <div class="chat-msg">
+            <div class="msg-avatar avatar-ai">M</div>
+            <div class="msg-body">
+              <div class="msg-meta">
+                <span>Maliha Assistant</span> • <span>Just now</span>
+                <span class="action-badge">[SCREEN_CAPTURE]</span>
+              </div>
+              <div class="msg-content">
+                📸 High-resolution screenshot of your Windows PC captured:
+                <div class="screenshot-preview-card">
+                  <div class="screen-topbar">
+                    <div class="screen-dot"></div><div class="screen-dot"></div><div class="screen-dot"></div>
+                  </div>
+                  <div class="screen-body">
+                    🖥️ Windows 11 Desktop (1920x1080 Real-time Stream)
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Chips Bar -->
+        <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;">
+          <button class="btn-action" onclick="sendToAssistant('screenshot')">📸 Screenshot</button>
+          <button class="btn-action" onclick="sendToAssistant('explain screen')">👁️ Vision Explain</button>
+          <button class="btn-action" onclick="sendToAssistant('webcam')">📷 Webcam Sentry</button>
+          <button class="btn-action" onclick="sendToAssistant('clipboard')">📋 Clipboard Sync</button>
+          <button class="btn-action" onclick="sendToAssistant('battery status')">🔋 Battery Guard</button>
+          <button class="btn-action" onclick="sendToAssistant('file fetch resume.pdf')">📁 Fetch File</button>
+          <button class="btn-action" onclick="sendToAssistant('schedule 30 shutdown')">⏰ Schedule Timer</button>
+          <button class="btn-action" onclick="sendToAssistant('pc status')">📊 PC Status</button>
+          <button class="btn-action" onclick="sendToAssistant('open youtube')">▶️ YouTube</button>
+          <button class="btn-action" onclick="sendToAssistant('lock my pc')">🔒 Lock PC</button>
+        </div>
+
+        <!-- Input Bar -->
+        <div class="chat-input-bar">
+          <input type="text" id="assistantInput" placeholder="Ask Maliha (e.g. 'Open Notepad', 'Screenshot', 'Play Lo-Fi')..." onkeydown="if(event.key==='Enter') submitAssistantChat()">
+          
+          <button class="btn-action" onclick="voiceAssistant('bn')">🎙️ BN</button>
+          <button class="btn-action" onclick="voiceAssistant('en')">🎙️ EN</button>
+
+          <button class="btn-submit" onclick="submitAssistantChat()" title="Send">
+            ➤
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 3. MEMORY VIEW -->
+    <div id="view-memory" class="view-container">
+      <div class="page-wrapper">
+        <div class="page-header">
+          <div class="page-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            <span>Maliha's Memory & Knowledge Bank</span>
+          </div>
+          <button class="btn-action" onclick="showToast('Memory synced with Cloud')">🔄 Sync Memory</button>
+        </div>
+
+        <div class="grid-2">
+          <div class="widget-card">
+            <div class="card-title"><span>👤 User Context & Profile</span></div>
+            <p style="font-size:13px; color:#cbd5e1; line-height:1.6;">
+              <strong>Master:</strong> Boss (You)<br>
+              <strong>Language Preference:</strong> বাংলা (Bengali) & English<br>
+              <strong>Audio Engine:</strong> Native Kotlin Speech + Windows TTS<br>
+              <strong>Status:</strong> Authenticated via Pairing Secret
+            </p>
+          </div>
+
+          <div class="widget-card">
+            <div class="card-title"><span>💻 Linked Windows Hardware</span></div>
+            <p style="font-size:13px; color:#cbd5e1; line-height:1.6;">
+              <strong>PC Name:</strong> DESKTOP-WINDOWS-11<br>
+              <strong>Processor:</strong> Intel Core i7 12-Cores<br>
+              <strong>RAM:</strong> 16.0 GB DDR5 High-Speed<br>
+              <strong>Storage:</strong> NVMe SSD C: Drive (142 GB free)<br>
+              <strong>Connection:</strong> Firebase RTDB Real-time Tunnel
+            </p>
+          </div>
+        </div>
+
+        <div class="widget-card">
+          <div class="card-title"><span>🧠 Active Context Rules</span></div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div class="action-btn" style="cursor:default;">
+              <span>1. Always maintain delay of 60 seconds for shutdown/restart (safety cancel rule).</span>
+            </div>
+            <div class="action-btn" style="cursor:default;">
+              <span>2. Fallback to rule-based parser if offline; use Gemini 1.5 Flash for natural sentences.</span>
+            </div>
+            <div class="action-btn" style="cursor:default;">
+              <span>3. Capture screen in 1280x720 JPEG for ultra-low latency mobile transfer.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. WORLD VIEW -->
+    <div id="view-world" class="view-container">
+      <div class="page-wrapper">
+        <div class="page-header">
+          <div class="page-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            <span>World & Network Intelligence Monitor</span>
+          </div>
+          <button class="btn-action" onclick="showToast('World data refreshed')">🌐 Refresh Global Feed</button>
+        </div>
+
+        <div class="grid-2">
+          <div class="widget-card" style="align-items:center; text-align:center;">
+            <div class="world-globe" style="width:130px; height:130px; margin:10px auto;"></div>
+            <h4 style="font-size:15px; font-weight:700; margin-bottom:4px;">Global System Connection</h4>
+            <p style="font-size:12px; color:#94a3b8;">Latency to Home PC: <span style="color:#34d399; font-weight:700;">22ms</span> • Bandwidth: <span style="color:#38bdf8; font-weight:700;">320 Mbps</span></p>
+          </div>
+
+          <div class="widget-card">
+            <div class="card-title"><span>🔥 Real-Time Trends & Feeds</span></div>
+            <div class="world-item"><span class="bullet-red"></span><span>Google Gemini 2.0 & Flutter 3.24 Multiplatform Updates</span></div>
+            <div class="world-item"><span class="bullet-purple"></span><span>Windows 11 Remote Automation Best Practices</span></div>
+            <div class="world-item"><span class="bullet-green"></span><span>Wake-on-LAN Magic Packet UDP Broadcast Verified</span></div>
+            <div class="world-item"><span class="bullet-red"></span><span>Weather: 28°C Clear Skies, Dhaka, Bangladesh</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. SKILLS VIEW -->
+    <div id="view-skills" class="view-container">
+      <div class="page-wrapper">
+        <div class="page-header">
+          <div class="page-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <span>Maliha's PC Automation Skills</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span id="skillCountBadge" style="font-size:12px; color:#34d399; font-weight:700;">6 ACTIVE SKILLS</span>
+            <button class="btn-action" style="background: linear-gradient(135deg, #00f0ff, #3b82f6); color:#05070f; font-weight:700; border:none; box-shadow:0 0 16px rgba(0,240,255,0.4);" onclick="openSkillModal()">
+              + Teach New Skill
+            </button>
+          </div>
+        </div>
+
+        <!-- DYNAMIC SKILLS GRID -->
+        <div class="skills-grid" id="skillsGrid">
+          <!-- Dynamically populated by JS renderSkills() -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. SETTINGS VIEW -->
+    <div id="view-settings" class="view-container">
+      <div class="page-wrapper" style="max-width:640px;">
+        <div class="page-header">
+          <div class="page-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Maliha System Settings</span>
+          </div>
+          <button class="btn-action" style="background:#2563eb; color:#fff;" onclick="saveSettings()">💾 Save Changes</button>
+        </div>
+
+        <div class="widget-card">
+          <div class="form-group">
+            <label>Firebase Realtime Database URL</label>
+            <input type="text" id="cfgDb" value="https://extention-a5961-default-rtdb.firebaseio.com">
+          </div>
+
+          <div class="form-group">
+            <label>Pairing Secret Key (Must match across all devices)</label>
+            <input type="text" id="cfgCode" value="assistant-key-7788">
+          </div>
+
+          <div class="form-group">
+            <label>Google Gemini API Key (Natural language AI understanding)</label>
+            <input type="text" id="cfgGemini" value="AIzaSy... (Pre-configured)">
+          </div>
+
+          <div class="form-group">
+            <label>Current Device Role</label>
+            <select id="cfgRole">
+              <option selected>Controller (Phone / I give commands)</option>
+              <option>PC Agent (Running on the Windows Laptop)</option>
+              <option>Bridge (Always-on home phone for Wake-on-LAN)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL: TEACH MALIHA A NEW CUSTOM SKILL -->
+  <div id="skillModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:18px;">⚡</span>
+          <h3 style="font-size:15px; font-weight:800; color:#fff;">Teach Maliha a New Custom Skill</h3>
+        </div>
+        <button class="card-close" onclick="closeSkillModal()" style="font-size:16px;">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size:12px; color:#94a3b8; line-height:1.4;">
+          Teach your AI assistant custom trigger phrases and specify the actions your Windows PC should execute.
+        </p>
+
+        <div class="form-group">
+          <label>Skill Name</label>
+          <input type="text" id="newSkillName" placeholder="e.g. Focus Mode, Night Routine, Clean PC">
+        </div>
+
+        <div class="form-group">
+          <label>Trigger Words / Voice Phrases (comma separated)</label>
+          <input type="text" id="newSkillTriggers" placeholder="e.g. focus mode, start work, deep work">
+        </div>
+
+        <div class="form-group">
+          <label>Action Category</label>
+          <select id="newSkillCategory">
+            <option value="app">Launch Desktop Application</option>
+            <option value="url">Open Websites / URLs</option>
+            <option value="powershell">Run PowerShell Command</option>
+            <option value="macro">Combined Multi-Action Routine</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Target Executable, URL or Command</label>
+          <input type="text" id="newSkillTarget" placeholder="e.g. code, chrome https://github.com, or PowerShell command">
+        </div>
+
+        <div class="form-group">
+          <label>Description (What Maliha will do)</label>
+          <input type="text" id="newSkillDesc" placeholder="e.g. Opens VS Code and development tabs in Chrome.">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-action" onclick="closeSkillModal()">Cancel</button>
+        <button class="btn-action" style="background:linear-gradient(135deg, #00f0ff, #3b82f6); color:#05070f; font-weight:700; border:none; padding:10px 18px;" onclick="saveCustomSkill()">
+          ⚡ Teach Maliha Skill
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPUP TOAST -->
+  <div class="toast" id="toast">
+    <span>⚡</span> <span id="toastMsg">Action executed</span>
+  </div>
+
+  <script>
+    let isListening = false;
+
+    // TAB SWITCHER FUNCTION
+    function switchTab(tabId) {
+      // 1. Update navigation active state
+      const navItems = document.querySelectorAll('.nav-item');
+      navItems.forEach(item => item.classList.remove('active'));
+
+      const map = {
+        'home': 0,
+        'assistant': 1,
+        'memory': 2,
+        'world': 3,
+        'skills': 4,
+        'settings': 5
+      };
+      if (map[tabId] !== undefined) {
+        navItems[map[tabId]].classList.add('active');
+      }
+
+      // 2. Hide all views and show active view
+      const views = document.querySelectorAll('.view-container');
+      views.forEach(v => v.classList.remove('active-view'));
+
+      const target = document.getElementById('view-' + tabId);
+      if (target) {
+        target.classList.add('active-view');
+      }
+
+      // 3. Update top greeting header based on page
+      const greeting = document.getElementById('greetingText');
+      if (tabId === 'home') {
+        greeting.innerText = "Hello! I'm Maliha. How can I help you today?";
+      } else if (tabId === 'assistant') {
+        greeting.innerText = "Maliha AI Assistant — Live Command & Chat Hub";
+      } else if (tabId === 'memory') {
+        greeting.innerText = "Maliha's Memory Bank — Context & Hardware Knowledge";
+      } else if (tabId === 'world') {
+        greeting.innerText = "World Monitor — Global System & Latency Intelligence";
+      } else if (tabId === 'skills') {
+        greeting.innerText = "Maliha's Active Skills — 6 Autonomous Capabilities Ready";
+      } else if (tabId === 'settings') {
+        greeting.innerText = "System Configuration & Cloud Bridge Settings";
+      }
+
+      showToast(`Navigated to: ${tabId.toUpperCase()}`);
+    }
+
+    function toggleListening() {
+      isListening = !isListening;
+      const label = document.getElementById('statusLabel');
+      const greeting = document.getElementById('greetingText');
+      const orb = document.querySelector('.cosmic-orb');
+
+      if (isListening) {
+        label.innerText = "Listening to voice...";
+        greeting.innerText = "Hey Boss! Maliha is listening... What would you like to do?";
+        orb.style.boxShadow = "0 0 90px #00f0ff, 0 0 150px #c084fc";
+        showToast("🎙️ Maliha is listening to your voice...");
+
+        setTimeout(() => {
+          label.innerText = "Listening...";
+          greeting.innerText = "Maliha: Primary screenshot captured and task completed!";
+          orb.style.boxShadow = "";
+          showToast("📸 Maliha captured screenshot & uploaded to cloud!");
+          isListening = false;
+        }, 2200);
+      } else {
+        label.innerText = "Listening...";
+        greeting.innerText = "Hello! I'm Maliha. How can I help you today?";
+        orb.style.boxShadow = "";
+      }
+    }
+
+    function executeQuick(name, cmd) {
+      showToast(`🚀 Maliha: Executing ${name}`);
+      const greeting = document.getElementById('greetingText');
+      greeting.innerText = `Maliha: Executing "${name}" on your Windows PC...`;
+    }
+
+    function sendToAssistant(cmd) {
+      document.getElementById('assistantInput').value = cmd;
+      submitAssistantChat();
+    }
+
+    function voiceAssistant(lang) {
+      const sample = lang === 'bn' ? 'ইউটিউবে হাবলু প্রোগ্রামার চালাও' : 'take a screenshot of my pc';
+      document.getElementById('assistantInput').value = sample;
+      submitAssistantChat();
+    }
+
+    function submitAssistantChat() {
+      const input = document.getElementById('assistantInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+
+      const chatBox = document.getElementById('assistantChatBox');
+      
+      // User message
+      const userDiv = document.createElement('div');
+      userDiv.className = 'chat-msg';
+      userDiv.innerHTML = `
+        <div class="msg-avatar avatar-user">YOU</div>
+        <div class="msg-body">
+          <div class="msg-meta"><span>You</span> • <span>Just now</span></div>
+          <div class="msg-content">${text}</div>
+        </div>
+      `;
+      chatBox.appendChild(userDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      // Pending AI indicator
+      const aiDiv = document.createElement('div');
+      aiDiv.className = 'chat-msg';
+      aiDiv.innerHTML = `
+        <div class="msg-avatar avatar-ai">M</div>
+        <div class="msg-body">
+          <div class="msg-meta"><span>Maliha Assistant</span> • <span>Executing...</span></div>
+          <div class="msg-content" style="color:#38bdf8;">⏳ Maliha is dispatching command to your Windows PC...</div>
+        </div>
+      `;
+      chatBox.appendChild(aiDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      setTimeout(() => {
+        let resultHtml = '';
+        let badge = '[SYSTEM_ACTION]';
+
+        if (text.includes('screenshot') || text.includes('স্ক্রিনশট')) {
+          badge = '[SCREEN_CAPTURE]';
+          resultHtml = `
+            📸 Windows 11 primary display captured successfully:
+            <div class="screenshot-preview-card">
+              <div class="screen-topbar"><div class="screen-dot"></div><div class="screen-dot"></div><div class="screen-dot"></div></div>
+              <div class="screen-body">🖥️ Windows 11 Desktop (Just captured now)</div>
+            </div>`;
+        } else if (text.includes('vision') || text.includes('explain') || text.includes('স্ক্রিন বুঝিয়ে') || text.includes('এনালাইসিস')) {
+          badge = '[SCREEN_VISION]';
+          resultHtml = `
+            👁️ <strong>Maliha Screen Vision Analysis:</strong><br>
+            I analyzed your active Windows screen. Currently, <strong>Visual Studio Code</strong> is open on <code>lib/main.dart</code>, alongside Google Chrome with 2 development tabs. Memory load is at 38% and CPU utilization is healthy at 12%. No errors or blocking dialogs detected.
+            <div class="screenshot-preview-card" style="margin-top:10px;">
+              <div class="screen-topbar"><div class="screen-dot"></div><div class="screen-dot"></div><div class="screen-dot"></div></div>
+              <div class="screen-body">🖥️ Analyzed Frame • 1920x1080 Real-time Stream</div>
+            </div>`;
+        } else if (text.includes('webcam') || text.includes('camera') || text.includes('ক্যামেরা') || text.includes('ছবি')) {
+          badge = '[WEBCAM_SENTRY]';
+          resultHtml = `
+            📷 Discrete Webcam Snapshot Captured (640x480 Stealth Mode):
+            <div class="cam-preview-card">
+              <div class="cam-topbar"><span>🔴 LIVE SENTRY</span><span>ROOM CAMERA • ONLINE</span></div>
+              <div class="cam-body">📸 Room Surveillance Snapshot Captured Successfully</div>
+            </div>`;
+        } else if (text.includes('clipboard') || text.includes('ক্লিপবোর্ড')) {
+          badge = '[CLIPBOARD_SYNC]';
+          resultHtml = `
+            📋 <strong>PC Clipboard Synced:</strong><br>
+            Current Windows PC Clipboard Content:<br>
+            <code style="display:block; background:#090e1d; padding:8px 12px; border-radius:8px; margin-top:6px; color:#38bdf8; font-family:'JetBrains Mono', monospace; font-size:12px;">https://github.com/flutter/flutter.git</code>
+            <button class="btn-action" style="margin-top:8px; font-size:11px;" onclick="showToast('Copied to phone clipboard!')">📋 Copy to Phone</button>`;
+        } else if (text.includes('file') || text.includes('fetch') || text.includes('ফাইল')) {
+          badge = '[FILE_FETCH]';
+          resultHtml = `
+            📁 <strong>Remote File Retrieved from PC:</strong>
+            <div class="file-preview-card">
+              <div class="file-left">
+                <div class="file-icon">📄</div>
+                <div class="file-info">
+                  <h5>Resume_SoftwareEngineer.pdf</h5>
+                  <span>Desktop Directory • 248.6 KB • Ready</span>
+                </div>
+              </div>
+              <button class="btn-action" style="background:#2563eb; color:#fff;" onclick="showToast('Downloading file to phone...')">⬇️ Download</button>
+            </div>`;
+        } else if (text.includes('battery') || text.includes('ব্যাটারি') || text.includes('পাওয়ার')) {
+          badge = '[BATTERY_GUARD]';
+          resultHtml = `
+            🔋 <strong>Power Cut & Battery Guard:</strong><br>
+            Battery Level: <strong>94%</strong> (High Capacity)<br>
+            AC Power Line: <strong>Online / Charging</strong><br>
+            Estimated Runtime: <strong>4 Hours 38 Minutes</strong><br>
+            <span style="color:#34d399; font-size:12px;">✓ Sentry Active: You will be alerted instantly if AC power is disconnected.</span>`;
+        } else if (text.includes('schedule') || text.includes('timer') || text.includes('টাইমার') || text.includes('মিনিট')) {
+          badge = '[TIMER_SCHEDULED]';
+          resultHtml = `
+            ⏰ <strong>Automated Schedule Created:</strong><br>
+            Your PC is scheduled to safely shut down in <strong>30 minutes</strong>.<br>
+            You can cancel this anytime by saying <em>"cancel shutdown"</em>.`;
+        } else if (text.includes('status') || text.includes('অবস্থা')) {
+          badge = '[STATUS_REPORT]';
+          resultHtml = `📊 Current PC Telemetry:<br>CPU: 12% Load | RAM: 6.2 GB used / 16.0 GB | Disk C: 142 GB free | Battery: 94% AC Power`;
+        } else if (text.includes('lock') || text.includes('লক')) {
+          badge = '[LOCK_PC]';
+          resultHtml = `🔒 Windows workstation locked securely.`;
+        } else {
+          badge = '[TASK_DONE]';
+          resultHtml = `✅ Command executed successfully on your PC: <em>"${text}"</em>`;
+        }
+
+        aiDiv.innerHTML = `
+          <div class="msg-avatar avatar-ai">M</div>
+          <div class="msg-body">
+            <div class="msg-meta">
+              <span>Maliha Assistant</span> • <span>Just now</span>
+              <span class="action-badge">${badge}</span>
+            </div>
+            <div class="msg-content">${resultHtml}</div>
+          </div>
+        `;
+        chatBox.scrollTop = chatBox.scrollHeight;
+        showToast(`✅ Maliha: ${badge} Done!`);
+      }, 700);
+    }
+
+    function saveSettings() {
+      showToast('💾 Settings successfully saved & cloud synced!');
+      setTimeout(() => switchTab('home'), 800);
+    }
+
+    // SKILLS DATA & TEACHABLE SKILL MANAGEMENT
+    let skillsList = [
+      { id: 1, icon: '📸', name: 'Screen Capture', badge: 'READY', desc: 'Captures full-resolution primary display screenshot and uploads to cloud.', action: 'screenshot', isCustom: false },
+      { id: 2, icon: '📊', name: 'PC Status Diagnostic', badge: 'READY', desc: 'Monitors CPU load, RAM capacity, SSD storage, and battery health.', action: 'pc status', isCustom: false },
+      { id: 3, icon: '🚀', name: 'App Launcher', badge: 'READY', desc: 'Launches Chrome, Notepad, VS Code, Calculator, or any Windows software.', action: 'open notepad', isCustom: false },
+      { id: 4, icon: '🔒', name: 'Security & Lock', badge: 'READY', desc: 'Instantly locks your Windows workstation remotely via rundll32.', action: 'lock my pc', isCustom: false },
+      { id: 5, icon: '⚡', name: 'Wake-on-LAN Bridge', badge: 'READY', desc: 'Powers on your turned-off PC remotely via home Android bridge magic packet.', action: 'wake', isCustom: false },
+      { id: 6, icon: '🗣️', name: 'Voice & Speech Synth', badge: 'READY', desc: 'Speaks aloud any notification or text through the laptop speakers.', action: 'say Hello Boss', isCustom: false },
+      { id: 7, icon: '📁', name: 'Remote File Fetcher', badge: 'READY', desc: 'Locates and transfers files from Desktop, Downloads, or Documents directly to your phone.', action: 'file fetch resume.pdf', isCustom: false },
+      { id: 8, icon: '📷', name: 'Stealth Webcam Sentry', badge: 'READY', desc: 'Silently captures discrete webcam snapshots to monitor your room and detect intruders.', action: 'webcam', isCustom: false },
+      { id: 9, icon: '👁️', name: 'Gemini Screen Vision', badge: 'READY', desc: 'Multimodal AI analyzes what is currently displayed on your PC screen and explains it in detail.', action: 'explain screen', isCustom: false },
+      { id: 10, icon: '📋', name: 'Universal Clipboard', badge: 'READY', desc: 'Instantly reads or injects text into the Windows PC clipboard across devices.', action: 'clipboard', isCustom: false },
+      { id: 11, icon: '🔋', name: 'Power Cut & Battery Guard', badge: 'READY', desc: 'Monitors laptop battery level, AC charging status, and alerts if power gets disconnected.', action: 'battery status', isCustom: false },
+      { id: 12, icon: '⏰', name: 'Scheduled Routines', badge: 'READY', desc: 'Schedules automated delayed shutdowns, restarts, or background commands with safety cancellation.', action: 'schedule 30 shutdown', isCustom: false }
+    ];
+
+    function renderSkills() {
+      const grid = document.getElementById('skillsGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      const countBadge = document.getElementById('skillCountBadge');
+      if (countBadge) {
+        countBadge.innerText = `${skillsList.length} ACTIVE SKILLS`;
+      }
+
+      skillsList.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'skill-card';
+        card.innerHTML = `
+          <div class="skill-top">
+            <span class="skill-name">${s.icon} ${s.name}</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="skill-badge" style="${s.isCustom ? 'color:#38bdf8; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.3);' : ''}">${s.badge}</span>
+              ${s.isCustom ? `<button onclick="deleteCustomSkill(${s.id})" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:13px; padding:2px 4px;" title="Delete Skill">✕</button>` : ''}
+            </div>
+          </div>
+          <p style="font-size:12px; color:#94a3b8; line-height:1.4;">${s.desc}</p>
+          <button class="btn-action" style="margin-top:auto;" onclick="executeQuick('${s.name}', '${s.action}')">⚡ Test Skill</button>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function openSkillModal() {
+      document.getElementById('skillModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('newSkillName').focus(), 100);
+    }
+
+    function closeSkillModal() {
+      document.getElementById('skillModal').style.display = 'none';
+      document.getElementById('newSkillName').value = '';
+      document.getElementById('newSkillTriggers').value = '';
+      document.getElementById('newSkillTarget').value = '';
+      document.getElementById('newSkillDesc').value = '';
+    }
+
+    function saveCustomSkill() {
+      const name = document.getElementById('newSkillName').value.trim();
+      const triggers = document.getElementById('newSkillTriggers').value.trim();
+      const cat = document.getElementById('newSkillCategory').value;
+      const target = document.getElementById('newSkillTarget').value.trim();
+      const desc = document.getElementById('newSkillDesc').value.trim();
+
+      if (!name || !target) {
+        alert("Please provide both a Skill Name and a Target Action (command, executable, or URL).");
+        return;
+      }
+
+      let icon = '⚡';
+      if (cat === 'app') icon = '💻';
+      else if (cat === 'url') icon = '🌐';
+      else if (cat === 'powershell') icon = '⌨️';
+      else if (cat === 'macro') icon = '🔄';
+
+      const newSkill = {
+        id: Date.now(),
+        icon: icon,
+        name: name,
+        badge: 'TAUGHT',
+        desc: desc || `Custom automated skill for: ${triggers || name}`,
+        action: target,
+        isCustom: true
+      };
+
+      skillsList.push(newSkill);
+      renderSkills();
+      closeSkillModal();
+      showToast(`✨ Maliha learned new skill: "${name}"!`);
+
+      // Notify in Assistant chat stream
+      const chatBox = document.getElementById('assistantChatBox');
+      if (chatBox) {
+        const msg = document.createElement('div');
+        msg.className = 'chat-msg';
+        msg.innerHTML = `
+          <div class="msg-avatar avatar-ai">M</div>
+          <div class="msg-body">
+            <div class="msg-meta"><span>Maliha Assistant</span> • <span>Just now</span> <span class="action-badge">[NEW_SKILL_LEARNED]</span></div>
+            <div class="msg-content">🎉 <strong>New Skill Memorized!</strong> I have learned the skill <em>"${name}"</em>. Whenever you say or send "${triggers || name}", I will execute: <code>${target}</code> on your Windows PC!</div>
+          </div>
+        `;
+        chatBox.appendChild(msg);
+      }
+    }
+
+    function deleteCustomSkill(id) {
+      skillsList = skillsList.filter(s => s.id !== id);
+      renderSkills();
+      showToast('🗑️ Custom skill removed.');
+    }
+
+    // Auto-render on load
+    renderSkills();
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2400);
+    }
+  </script>
+</body>
+</html>
