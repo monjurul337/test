@@ -1,0 +1,1111 @@
+// Gemini Web session API — ported 1:1 from the extension's background.js
+// (which itself was ported from the original lib/gemini_api.dart).
+//
+// HOW LOGIN WORKS IN THIS APP (read this before changing anything):
+// The extension rode on Chrome's cookie jar: the user was signed into
+// Google in the browser, and fetch(..., credentials:'include') sent the
+// cookies. A standalone app has no browser jar, so this app keeps its
+// OWN cookie jar per Gemini account (u/0..u/5):
+//   1. The login screen (login_screen.dart) opens gemini.google.com in
+//      an in-app WebView with a desktop Chrome user-agent. The user signs
+//      in with Google *inside Google's own page* — the app never sees
+//      the password.
+//   2. On success the app copies the session cookies out of the WebView
+//      cookie manager into SessionStore.
+//   3. Every request below sends those cookies in the Cookie header and
+//      replays the page's SNlM0e ("at") token, exactly like the extension.
+//   4. Fallback: if Google blocks WebView sign-in on a device, the user
+//      can paste __Secure-1PSID / __Secure-1PSIDTS (or a cookies.txt)
+//      in the login screen — same jar, same code path afterwards.
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+
+import 'models.dart';
+import 'session_store.dart';
+import 'studio_constants.dart';
+
+class GeminiAttachment {
+  final String uploadPath;
+  final String mimeType;
+  final String filename;
+  final String? processFileUuid;
+  final int authUser;
+  final Uint8List sourceBytes;
+  const GeminiAttachment({
+    required this.uploadPath,
+    required this.mimeType,
+    required this.filename,
+    this.processFileUuid,
+    required this.authUser,
+    required this.sourceBytes,
+  });
+}
+
+class StreamGenerateResult {
+  final List<String> urls;
+  final String assistantText;
+  const StreamGenerateResult(this.urls, this.assistantText);
+}
+
+class HdFetchResult {
+  final Uint8List bytes;
+  final String mimeType;
+  final String ext;
+  final String finalHdUrl;
+  const HdFetchResult(this.bytes, this.mimeType, this.ext, this.finalHdUrl);
+}
+
+class GeminiApi {
+  GeminiApi({StatusSink? onStatus}) : onStatus = onStatus ?? ((_) {});
+
+  final StatusSink onStatus;
+  final http.Client _client = http.Client();
+  final Map<int, GeminiSession> _sessionCache = {};
+  int activeAuthUserIndex = 0;
+
+  static const String uploadInitUrl =
+      'https://push.clients6.google.com/upload/';
+  static const String pushId = 'feeds/mcudyrk2a4khkz';
+  static const String clientPctx = 'CgcSBWjK7pYx';
+  static const String tenantId = 'bard-storage';
+  static const String defaultBl = 'boq_gemini-web-uiserver_20261106.06_p0';
+
+  /// Desktop Chrome UA — also used by the login WebView so the session
+  /// the user creates matches what these requests look like.
+  static const String chromeUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+  void _status(String state, int step, String message) =>
+      onStatus(StatusEvent(state, step, message));
+
+  Map<String, String> _pageHeaders(String cookieHeader) => {
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': chromeUserAgent,
+        'Origin': 'https://gemini.google.com',
+        'Referer': 'https://gemini.google.com/',
+        if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
+      };
+
+  Map<String, String> _rpcHeaders(String cookieHeader) => {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'X-Same-Domain': '1',
+        'User-Agent': chromeUserAgent,
+        'Origin': 'https://gemini.google.com',
+        'Referer': 'https://gemini.google.com/',
+        if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
+      };
+
+  // ---------------------------------------------------------------------
+  // Session handling (extension: getGeminiSession / scanAvailableGeminiAccounts)
+  // ---------------------------------------------------------------------
+
+  Future<int> resolveTargetAuthUser({int? explicit}) async {
+    if (explicit != null) {
+      activeAuthUserIndex = explicit;
+      return explicit;
+    }
+    final mode = await SessionStore.loadAccountMode();
+    if (mode != 'auto') {
+      final parsed = int.tryParse(mode);
+      if (parsed != null && parsed >= 0) {
+        activeAuthUserIndex = parsed;
+        return parsed;
+      }
+    }
+    return activeAuthUserIndex;
+  }
+
+  static String extractEmailFromHtml(String html) {
+    final wiz = RegExp(r'"oPEP7c":"([^"]+@[^"]+)"').firstMatch(html);
+    if (wiz != null) return wiz.group(1)!.trim();
+    final generic = RegExp(
+            r'([a-zA-Z0-9._%+-]+@(?:gmail\.com|googlemail\.com))',
+            caseSensitive: false)
+        .firstMatch(html);
+    if (generic != null) return generic.group(1)!.trim().toLowerCase();
+    return '';
+  }
+
+  /// Fetches /u/<n>/app with the stored cookie jar and extracts the
+  /// SNlM0e session token. This IS the login check: no token = not
+  /// signed in (or the cookie expired).
+  Future<GeminiSession> getSession(
+      {bool forceRefresh = false, int? explicitAuthUser}) async {
+    final authUser = await resolveTargetAuthUser(explicit: explicitAuthUser);
+    final cached = _sessionCache[authUser];
+    if (!forceRefresh &&
+        cached != null &&
+        cached.at.isNotEmpty &&
+        cached.isFresh) {
+      return cached;
+    }
+
+    final cookieHeader = await SessionStore.cookieForUser(authUser) ?? '';
+    if (cookieHeader.isEmpty) {
+      throw Exception(
+          'No Gemini login found for Account u/$authUser. Open the Gemini Login tab and sign in first.');
+    }
+
+    _status('authenticating', 1,
+        'Connecting to Gemini Account u/$authUser (fetching SNlM0e token)...');
+
+    final appUri = Uri.parse(
+        'https://gemini.google.com/u/$authUser/app?authuser=$authUser');
+    final response =
+        await _client.get(appUri, headers: _pageHeaders(cookieHeader));
+    if (response.statusCode != 200) {
+      throw Exception(
+          'Failed to reach gemini.google.com/u/$authUser/app (HTTP ${response.statusCode}). Make sure you are signed into Google.');
+    }
+
+    final html = response.body;
+    final session = _parseSessionHtml(html, authUser, cookieHeader);
+    if (session == null) {
+      throw Exception(
+          'Could not find Gemini session token (SNlM0e) for Account u/$authUser. The login may have expired — sign in again from the Gemini Login tab.');
+    }
+    _sessionCache[authUser] = session;
+    await SessionStore.saveActiveInfo(session);
+    return session;
+  }
+
+  GeminiSession? _parseSessionHtml(
+      String html, int authUser, String cookieHeader) {
+    final at = RegExp(r'"SNlM0e":"([^"]+)"').firstMatch(html)?.group(1);
+    if (at == null || at.isEmpty) return null;
+    final bl =
+        RegExp(r'"cfb2h":"([^"]+)"').firstMatch(html)?.group(1) ?? defaultBl;
+    final fSid = RegExp(r'"FdrFJe":"([^"]+)"').firstMatch(html)?.group(1) ?? '';
+    final email = extractEmailFromHtml(html);
+    return GeminiSession(
+      authUser: authUser,
+      email: email.isEmpty ? 'Account u/$authUser' : email,
+      at: at,
+      bl: bl,
+      fSid: fSid,
+      cookieHeader: cookieHeader,
+      fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Probes /u/0../u/5 in parallel and returns every distinct signed-in
+  /// account found in the stored cookie jars.
+  Future<List<GeminiAccount>> scanAccounts() async {
+    final cookiesByUser = await SessionStore.loadCookiesByUser();
+    final futures = List.generate(6, (u) async {
+      final cookieHeader = cookiesByUser[u] ?? '';
+      if (cookieHeader.isEmpty) return null;
+      try {
+        final uri = Uri.parse('https://gemini.google.com/u/$u/app?authuser=$u');
+        final resp =
+            await _client.get(uri, headers: _pageHeaders(cookieHeader));
+        if (resp.statusCode != 200) return null;
+        final session = _parseSessionHtml(resp.body, u, cookieHeader);
+        if (session == null) return null;
+        _sessionCache[u] = session;
+        return GeminiAccount(authUser: u, email: session.email, bl: session.bl);
+      } catch (_) {
+        return null;
+      }
+    });
+    final raw =
+        (await Future.wait(futures)).whereType<GeminiAccount>().toList();
+    final seen = <String>{};
+    final unique = <GeminiAccount>[];
+    for (final acc in raw) {
+      final key = acc.email.contains('@')
+          ? acc.email.toLowerCase()
+          : 'u/${acc.authUser}';
+      if (seen.add(key)) unique.add(acc);
+    }
+    await SessionStore.saveDiscoveredAccounts(unique);
+    return unique;
+  }
+
+  static bool isQuotaOrLimitFailure(int status, String assistantText) {
+    if (status == 429 || status == 503) return true;
+    final t = assistantText.toLowerCase();
+    if (t.isEmpty) return false;
+    const keywords = [
+      'reached your limit',
+      'rate limit',
+      'quota',
+      'too many requests',
+      'try again later',
+      'can not generate more',
+      'cannot generate more',
+      'limit for generating images',
+      'create more images tomorrow',
+      'high demand',
+    ];
+    return keywords.any(t.contains);
+  }
+
+  Future<GeminiSession?> trySwitchToNextAccount(int failedAuthUser) async {
+    var accounts = await SessionStore.loadDiscoveredAccounts();
+    if (accounts.length <= 1) {
+      accounts = await scanAccounts();
+    }
+    final others = accounts.where((a) => a.authUser != failedAuthUser).toList();
+    if (others.isEmpty) return null;
+    final idx = accounts.indexWhere((a) => a.authUser == failedAuthUser);
+    final next =
+        idx >= 0 ? accounts[(idx + 1) % accounts.length] : others.first;
+    if (next.authUser == failedAuthUser) return null;
+    activeAuthUserIndex = next.authUser;
+    final mode = await SessionStore.loadAccountMode();
+    if (mode != 'auto') {
+      await SessionStore.saveAccountMode(next.authUser.toString());
+    }
+    final newSession =
+        await getSession(forceRefresh: true, explicitAuthUser: next.authUser);
+    _status('authenticating', 1,
+        'Account u/$failedAuthUser limit/quota reached — auto-switched to u/${newSession.authUser} (${newSession.email})!');
+    return newSession;
+  }
+
+  // ---------------------------------------------------------------------
+  // StreamGenerate RPC (text + image) — extension: parseStreamGenerateResponse
+  // ---------------------------------------------------------------------
+
+  void _extractImageUrls(dynamic node, Set<String> out) {
+    if (node == null) return;
+    if (node is String) {
+      final re = RegExp(
+          r'https://(?:lh3\.googleusercontent\.com|[a-zA-Z0-9\-]+\.fife\.usercontent\.google\.com)/[a-zA-Z0-9_\-/=%+]+');
+      for (final m in re.allMatches(node)) {
+        final url = m.group(0)!;
+        if (!url.contains('/a/') && !url.contains('/a-/') && url.length > 48) {
+          out.add(url);
+        }
+      }
+      final trimmed = node.trim();
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+          (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          _extractImageUrls(jsonDecode(trimmed), out);
+        } catch (_) {}
+      }
+      return;
+    }
+    if (node is List) {
+      for (final item in node) {
+        _extractImageUrls(item, out);
+      }
+      return;
+    }
+    if (node is Map) {
+      for (final v in node.values) {
+        _extractImageUrls(v, out);
+      }
+    }
+  }
+
+  StreamGenerateResult parseStreamGenerateResponse(String rawText,
+      {List<String> excludeUrls = const []}) {
+    final candidateUrls = <String>{};
+    final fallbackUrls = <String>{};
+    var assistantText = '';
+
+    final excludeBase = excludeUrls
+        .map((u) => u
+            .replaceAll(RegExp(r'''["'\\]+$'''), '')
+            .replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), ''))
+        .toSet();
+
+    for (final line in rawText.split('\n')) {
+      final trimmed = line.trim();
+      if (!trimmed.startsWith('[')) continue;
+      try {
+        final outer = jsonDecode(trimmed);
+        _extractImageUrls(outer, fallbackUrls);
+        if (outer is List) {
+          for (final entry in outer) {
+            if (entry is List &&
+                entry.length > 2 &&
+                entry[0] == 'wrb.fr' &&
+                entry[2] is String) {
+              try {
+                final inner = jsonDecode(entry[2] as String);
+                if (inner is List && inner.length > 4 && inner[4] is List) {
+                  _extractImageUrls(inner[4], candidateUrls);
+                  final first =
+                      (inner[4] as List).isNotEmpty ? inner[4][0] : null;
+                  if (first is List &&
+                      first.length > 1 &&
+                      first[1] is List &&
+                      (first[1] as List).isNotEmpty &&
+                      first[1][0] is String) {
+                    final candidateText = first[1][0] as String;
+                    if (candidateText.trim().length >=
+                        assistantText.trim().length) {
+                      assistantText = candidateText;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    final unescaped = rawText
+        .replaceAll(r'\u003d', '=')
+        .replaceAll(r'\u0026', '&')
+        .replaceAll(r'\/', '/');
+    final directRe = RegExp(
+        r'https://(?:lh3\.googleusercontent\.com|[a-zA-Z0-9\-]+\.fife\.usercontent\.google\.com)/(?:gg-dl|rd-gg-dl|gg)/[a-zA-Z0-9_\-/=%+]+');
+    for (final m in directRe.allMatches(unescaped)) {
+      fallbackUrls.add(m.group(0)!);
+    }
+
+    final source = candidateUrls.isNotEmpty ? candidateUrls : fallbackUrls;
+    final baseMap = <String, String>{};
+    for (final url in source) {
+      final clean = url
+          .replaceAll(RegExp(r'''["'\\]+$'''), '')
+          .replaceAll(RegExp(r'\?.*$'), '');
+      final baseKey = clean.replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
+      if (!excludeBase.contains(baseKey)) baseMap[baseKey] = clean;
+    }
+    return StreamGenerateResult(baseMap.keys.toList(), assistantText);
+  }
+
+  Uri _rpcUri(GeminiSession s, String rpcName) {
+    final params = <String, String>{
+      'bl': s.bl,
+      'hl': 'en',
+      '_reqid': (100000 + Random().nextInt(900000)).toString(),
+      'rt': 'c',
+      'authuser': '${s.authUser}',
+      if (s.fSid.isNotEmpty) 'f.sid': s.fSid,
+    };
+    return Uri.parse(
+            'https://gemini.google.com/u/${s.authUser}/_/BardChatUi/data/assistant.lamda.BardFrontendService/$rpcName')
+        .replace(queryParameters: params);
+  }
+
+  /// Extension: askGeminiText — pure text completion, fresh chat.
+  Future<String> askGeminiText(String promptText,
+      {GeminiSession? session, int attempts = 3}) async {
+    var active = session ?? await getSession();
+    var lastErr = 'Empty response from Gemini';
+    for (var i = 0; i < attempts; i++) {
+      try {
+        final endpoint = _rpcUri(active, 'StreamGenerate');
+        final inner = jsonEncode([
+          [promptText],
+          null,
+          [null, null, null]
+        ]);
+        final body = {
+          'f.req': jsonEncode([null, inner]),
+          'at': active.at
+        };
+        var response = await _client.post(endpoint,
+            headers: _rpcHeaders(active.cookieHeader), body: body);
+        if (response.statusCode == 401 ||
+            response.statusCode == 403 ||
+            response.statusCode == 400) {
+          active = await getSession(
+              forceRefresh: true, explicitAuthUser: active.authUser);
+          body['at'] = active.at;
+          response = await _client.post(_rpcUri(active, 'StreamGenerate'),
+              headers: _rpcHeaders(active.cookieHeader), body: body);
+        }
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+        final parsed = parseStreamGenerateResponse(response.body);
+        if (parsed.assistantText.trim().isNotEmpty) {
+          return parsed.assistantText.trim();
+        }
+      } catch (e) {
+        lastErr = e.toString();
+      }
+      if (i < attempts - 1) {
+        await Future.delayed(Duration(milliseconds: 1500 * (i + 1)));
+      }
+    }
+    throw Exception('Gemini text completion failed: $lastErr');
+  }
+
+  // ---------------------------------------------------------------------
+  // Balanced JSON extraction (extension: extractBalancedJsonBlocks etc.)
+  // ---------------------------------------------------------------------
+
+  List<String> extractBalancedJsonBlocks(String text) {
+    final blocks = <String>[];
+    var depth = 0;
+    var start = -1;
+    String? quote;
+    var escaped = false;
+    for (var i = 0; i < text.length; i++) {
+      final c = text[i];
+      if (quote != null) {
+        if (escaped) {
+          escaped = false;
+        } else if (c == r'\') {
+          escaped = true;
+        } else if (c == quote) {
+          quote = null;
+        }
+        continue;
+      }
+      if (c == '"' || c == "'") {
+        quote = c;
+      } else if (c == '{') {
+        if (depth == 0) start = i;
+        depth++;
+      } else if (c == '}') {
+        if (depth > 0) {
+          depth--;
+          if (depth == 0 && start >= 0) {
+            blocks.add(text.substring(start, i + 1));
+            start = -1;
+          }
+        }
+      }
+    }
+    blocks.sort((a, b) => b.length.compareTo(a.length));
+    return blocks;
+  }
+
+  Map<String, dynamic>? _decodeJsonMap(String str) {
+    final t = str.trim();
+    if (t.isEmpty) return null;
+    const knownKeys = {
+      'title',
+      'tags',
+      'category',
+      'description',
+      'arc',
+      'anchor',
+      'palette',
+      'stages',
+      'direction',
+      'label'
+    };
+    Map<String, dynamic>? asMap(dynamic v) {
+      if (v == null) return null;
+      if (v is List) {
+        for (final item in v) {
+          final m = asMap(item);
+          if (m != null) return m;
+        }
+        return null;
+      }
+      if (v is Map) return Map<String, dynamic>.from(v);
+      return null;
+    }
+
+    Map<String, dynamic>? unwrap(Map<String, dynamic> m) {
+      final keys = m.keys.toList();
+      if (keys.length == 1 &&
+          !knownKeys.contains(keys[0]) &&
+          m[keys[0]] is Map) {
+        return Map<String, dynamic>.from(m[keys[0]] as Map);
+      }
+      return m;
+    }
+
+    for (final candidate in [t, t.replaceAll(RegExp(r',\s*([}\]])'), r'$1')]) {
+      try {
+        final m = asMap(jsonDecode(candidate));
+        if (m != null) return unwrap(m);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? extractJsonMapFromReply(String text) {
+    final cleaned = text.replaceAll(RegExp(r'```(?:\w+)?'), '').trim();
+    final direct = _decodeJsonMap(cleaned);
+    if (direct != null) return direct;
+    for (final block in extractBalancedJsonBlocks(cleaned)) {
+      final m = _decodeJsonMap(block);
+      if (m != null) return m;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // AI metadata + AI Set Director
+  // ---------------------------------------------------------------------
+
+  Future<SetMetadata> generateSetMetadata({
+    required String workflowMode,
+    required String prompt,
+    required String file,
+    GeminiSession? session,
+  }) async {
+    final setTypeStr = workflowMode == 'set_24h'
+        ? '24-HOUR'
+        : workflowMode == 'set_dual'
+            ? 'DUAL'
+            : workflowMode == 'set_battery'
+                ? 'BATTERY'
+                : 'SINGLE';
+    var concept = prompt.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (concept.length > 40) concept = concept.substring(0, 40);
+    if (concept.isEmpty) concept = 'wallpaper';
+
+    final systemPrompt =
+        'You write Zedge wallpaper listing metadata. Reply with ONE JSON object only, no markdown, no commentary.\n'
+        'Schema: {"title": string (max 30 characters, Title Case, catchy, no emoji, no quotes), '
+        '"tags": array of 8 to 12 single lowercase words (no spaces, no hyphens, no duplicates, no brand or franchise names), '
+        '"category": one of ${jsonEncode(kZedgeCategories)}, '
+        '"description": string (1-2 sentences, max 200 characters, natural, no hashtags, no emoji)}.\n'
+        'Set types: 24-HOUR = 4 time-of-day wallpapers; DUAL = lock + home screen pair; BATTERY = 6 charge-level wallpapers; SINGLE = one wallpaper. '
+        'Mention the set behaviour naturally in the description when the type is not SINGLE. Never mention copyrighted characters, brands, humans or text. '
+        'Do not describe the image in sentences - output only the JSON object.';
+    const varietyNote =
+        'Write like a normal human uploader, not a template: vary the title structure naturally (sometimes the subject, sometimes the mood, sometimes a short phrase), '
+        'never start the description the same way twice, and pick tags that fit this specific image - specific over generic - shuffling their order every time.';
+    const webJsonNote =
+        'OUTPUT RULE: reply with the raw JSON object ONLY. No markdown, no code fences, no commentary, no explanation before or after it.';
+    final fullPrompt = '$systemPrompt\n\n$varietyNote\n\n'
+        'Set type: $setTypeStr\nConcept name: $concept\nImage prompt: $prompt\n\n'
+        'Return the JSON object now.\n\n$webJsonNote';
+
+    Map<String, dynamic>? metaMap;
+    var lastReply = '';
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final replyText =
+          await askGeminiText(fullPrompt, session: session, attempts: 2);
+      lastReply = replyText;
+      metaMap = extractJsonMapFromReply(replyText);
+      if (metaMap != null &&
+          (metaMap['title'] != null || metaMap['tags'] != null)) break;
+      await Future.delayed(const Duration(milliseconds: 1200));
+    }
+    if (metaMap == null) {
+      throw Exception(
+          'Gemini did not return valid metadata JSON. Reply: ${lastReply.length > 120 ? lastReply.substring(0, 120) : lastReply}');
+    }
+
+    final tags = <String>[];
+    final rawTags = metaMap['tags'];
+    if (rawTags is List) {
+      for (final rawTag in rawTags) {
+        final clean = rawTag
+            .toString()
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (clean.isNotEmpty && !tags.contains(clean)) tags.add(clean);
+        if (tags.length == 12) break;
+      }
+    }
+    var category = (metaMap['category']?.toString() ?? '').toUpperCase().trim();
+    if (!kZedgeCategories.contains(category)) category = 'DESIGNS';
+    var title = (metaMap['title']?.toString() ?? '')
+        .replaceAll(RegExp(r'''["']'''), '')
+        .trim();
+    if (title.length > 30) title = title.substring(0, 30);
+    var description = (metaMap['description']?.toString() ?? '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (description.length > 200) description = description.substring(0, 200);
+
+    return SetMetadata(
+      file: file,
+      title: title,
+      tags: tags,
+      category: category,
+      description: description,
+      generatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Future<DirectorPlan> directSetWithGemini({
+    required String workflowMode,
+    required List<String> variantLabels,
+    required String prompt,
+    GeminiSession? session,
+  }) async {
+    final stageCount = variantLabels.length;
+    final typeUpper = workflowMode == 'set_battery'
+        ? 'BATTERY'
+        : workflowMode == 'set_24h'
+            ? '24-HOUR'
+            : workflowMode == 'set_dual'
+                ? 'DUAL'
+                : 'SINGLE';
+    var perTypeRules = '';
+    if (typeUpper == 'BATTERY') {
+      perTypeRules = 'BATTERY set ($stageCount charge levels, 0% to 100%):\n'
+          '- The glow HUE is locked by the concept and must be identical in every stage. Only the AMOUNT of light changes.\n'
+          '- Every direction MUST state, as absolute values: the share of the frame that is lit (about 5, 20, 40, 60, 80 then 100 percent), the brightness of the glow core, the bloom radius, and how much of the frame is still in shadow.\n'
+          '- Spread the ladder evenly and make the top half obvious: 60% must read as clearly dimmer than 80%, and 80% clearly dimmer than 100%. Use different physical light behaviour per stage (halo size, light rays, reflections, volumetric beams, lens flare, blown-out core, haze) so the upper levels can never look the same.\n'
+          '- 0% is almost black, 100% has no dark area left anywhere in the frame.';
+    } else if (typeUpper == '24-HOUR') {
+      perTypeRules = '24-HOUR set ($stageCount times of day):\n'
+          '- Every direction MUST state: the clock hour, the key-light direction and elevation in degrees, the color temperature in Kelvin, the shadow length and direction, and the amount of atmosphere (mist, haze, clarity).\n'
+          '- Dawn is low warm light with long shadows, midday is near-overhead neutral light with short hard shadows, evening is low raking warm light with long shadows the opposite way, night has no sun at all, cool light and mostly deep shadow.\n'
+          '- Shadow direction must visibly flip between morning and evening.';
+    } else if (typeUpper == 'DUAL') {
+      perTypeRules = 'DUAL set ($stageCount screens):\n'
+          '- Lock and Home must differ in FRAMING, not in lighting. Keep the lighting and palette the same.\n'
+          '- Every direction MUST state: how much of the frame height the hero fills (about 80 percent for Lock, about 30 percent for Home), the depth of field (shallow and blurred background for Lock, deep focus for Home), and where the calm empty space sits.\n'
+          '- Home must leave a quiet low-detail area in the upper half for clock, icons and widgets.';
+    }
+
+    final directorPrompt =
+        'You are a professional art director for premium mobile wallpaper sets sold on wallpaper marketplaces. Reply with ONE JSON object only, no markdown, no commentary.\n'
+        'Schema: {"arc": string (short evocative arc name, e.g. "Bloom cycle"), '
+        '"anchor": string (one neutral base-scene description fragment, no strong time-of-day or energy bias — it is the reference image every stage is re-lit from, so it must be a clean, mid-dark, unbiased rendering of the concept), '
+        '"palette": array of 1-3 lowercase color words actually present in the concept, '
+        '"stages": array with EXACTLY $stageCount objects, one per variant label in the given order, each {"label": string (the exact label), "direction": string (1-3 sentences describing ONLY what this stage looks like: lighting, state, atmosphere, framing — the subject, objects, background and art style stay identical)}}.\n'
+        'Hard rules:\n'
+        '- Never describe text, letters, numbers, symbols, icons, logos or watermarks in the image.\n'
+        '- Each direction is an ABSOLUTE description of that stage, never a relative one.\n'
+        '- Never reuse the same adjective, light behaviour or mood in two stages.\n'
+        '- Never add, remove, resize or rearrange the subject, objects or background unless the set type explicitly asks for a framing change.\n'
+        '$perTypeRules\n\n'
+        'Set type: $typeUpper\n'
+        'Variant labels in order: ${variantLabels.map((l) => '"$l"').join(', ')}\n'
+        'User prompt: $prompt\n\n'
+        'Return the JSON object now.\n'
+        'OUTPUT RULE: reply with the raw JSON object ONLY. No markdown, no code fences, no commentary.';
+
+    final replyText =
+        await askGeminiText(directorPrompt, session: session, attempts: 2);
+    final meta = extractJsonMapFromReply(replyText);
+    if (meta == null ||
+        meta['stages'] is! List ||
+        (meta['stages'] as List).length < stageCount) {
+      throw Exception('AI Set Director returned an incomplete stage plan.');
+    }
+    final stagesRaw = meta['stages'] as List;
+    final directions = <String>[];
+    for (var i = 0; i < stageCount; i++) {
+      final s = stagesRaw[i];
+      final dir = s is Map ? s['direction']?.toString().trim() ?? '' : '';
+      if (dir.isEmpty) throw Exception('Empty stage direction in AI plan.');
+      directions.add(dir);
+    }
+    final palette = <String>[];
+    final rawPalette = meta['palette'];
+    if (rawPalette is List) {
+      for (final c in rawPalette) {
+        final w = c.toString().toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+        if (w.isNotEmpty && !palette.contains(w)) palette.add(w);
+        if (palette.length == 3) break;
+      }
+    }
+    return DirectorPlan(
+      arc: meta['arc']?.toString() ?? 'AI Directed Arc',
+      anchorDirection: (meta['anchor']?.toString() ?? '').trim(),
+      palette: palette,
+      stageDirections: directions,
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // HD image fetch + resumable upload (img2img) + StreamGenerate for images
+  // ---------------------------------------------------------------------
+
+  String _toHdImageUrl(String baseUrl) {
+    final withoutQuery = baseUrl.replaceAll(RegExp(r'\?.*$'), '');
+    final stripped = withoutQuery.replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
+    return '$stripped=s0';
+  }
+
+  Future<HdFetchResult> fetchHdBlob(
+      String baseUrl, GeminiSession session) async {
+    var currentUrl = _toHdImageUrl(baseUrl);
+    for (var hop = 0; hop < 4; hop++) {
+      final resp = await _client.get(Uri.parse(currentUrl), headers: {
+        'User-Agent': chromeUserAgent,
+        'Origin': 'https://gemini.google.com',
+        'Referer': 'https://gemini.google.com/',
+        if (session.cookieHeader.isNotEmpty) 'Cookie': session.cookieHeader,
+      });
+      if (resp.statusCode != 200) {
+        throw Exception(
+            'Gemini HD image fetch returned HTTP ${resp.statusCode}');
+      }
+      final contentType = (resp.headers['content-type'] ?? '').toLowerCase();
+      if (contentType.contains('text/plain')) {
+        final textBody = resp.body.trim();
+        if (textBody.startsWith('https://')) {
+          currentUrl = _toHdImageUrl(textBody);
+          continue;
+        }
+        throw Exception(
+            'Unexpected text/plain response when fetching Gemini image.');
+      }
+      final mimeType = contentType.contains('png')
+          ? 'image/png'
+          : contentType.contains('webp')
+              ? 'image/webp'
+              : 'image/jpeg';
+      final ext = mimeType == 'image/png'
+          ? 'png'
+          : mimeType == 'image/webp'
+              ? 'webp'
+              : 'jpg';
+      return HdFetchResult(resp.bodyBytes, mimeType, ext, currentUrl);
+    }
+    throw Exception(
+        'Exceeded maximum redirect hops while fetching Gemini HD image.');
+  }
+
+  Future<GeminiAttachment> uploadImageForImg2Img(
+    Uint8List bytes,
+    String filename,
+    GeminiSession session, {
+    String mimeType = 'image/jpeg',
+    int stepNum = 2,
+  }) async {
+    final u = session.authUser;
+    _status('img2img_uploading', stepNum,
+        'Uploading anchor reference image to Gemini u/$u (${(bytes.length / 1024).round()} KB)...');
+
+    final initUri = Uri.parse('$uploadInitUrl?authuser=$u');
+    final startResp = await _client.post(initUri,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'Push-Id': pushId,
+          'X-Client-Pctx': clientPctx,
+          'X-Goog-AuthUser': '$u',
+          'X-Goog-Upload-Command': 'start',
+          'X-Goog-Upload-Header-Content-Length': '${bytes.length}',
+          'X-Goog-Upload-Protocol': 'resumable',
+          'X-Tenant-Id': tenantId,
+          'User-Agent': chromeUserAgent,
+          if (session.cookieHeader.isNotEmpty) 'Cookie': session.cookieHeader,
+        },
+        body: 'File name: $filename');
+    if (startResp.statusCode != 200) {
+      throw Exception(
+          'Gemini resumable upload init failed (HTTP ${startResp.statusCode})');
+    }
+    final uploadUrl = startResp.headers['x-goog-upload-url'] ??
+        startResp.headers['x-goog-upload-control-url'];
+    if (uploadUrl == null || uploadUrl.isEmpty) {
+      throw Exception(
+          'Gemini upload init did not return x-goog-upload-url header.');
+    }
+
+    final finalizeResp = await _client.post(Uri.parse(uploadUrl),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+          'Push-Id': pushId,
+          'X-Client-Pctx': clientPctx,
+          'X-Goog-Upload-Command': 'upload, finalize',
+          'X-Goog-Upload-Offset': '0',
+          'X-Tenant-Id': tenantId,
+          'User-Agent': chromeUserAgent,
+          if (session.cookieHeader.isNotEmpty) 'Cookie': session.cookieHeader,
+        },
+        body: bytes);
+    if (finalizeResp.statusCode != 200) {
+      throw Exception(
+          'Gemini image binary upload failed (HTTP ${finalizeResp.statusCode})');
+    }
+    final uploadPath = finalizeResp.body.trim();
+    if (!uploadPath.startsWith('/contrib_service/')) {
+      throw Exception(
+          'Unexpected upload path returned by bard-storage: "${uploadPath.length > 100 ? uploadPath.substring(0, 100) : uploadPath}"');
+    }
+
+    String? processFileUuid;
+    try {
+      final processInner = jsonEncode([
+        [
+          [uploadPath, null, 1, mimeType],
+          filename,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [0]
+        ],
+        null,
+        1,
+        ['en']
+      ]);
+      final formBody = {
+        'f.req': jsonEncode([null, processInner]),
+        'at': session.at,
+      };
+      final procResp = await _client.post(_rpcUri(session, 'ProcessFile'),
+          headers: _rpcHeaders(session.cookieHeader), body: formBody);
+      if (procResp.statusCode == 200) {
+        final m = RegExp(
+                r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                caseSensitive: false)
+            .firstMatch(procResp.body);
+        if (m != null) processFileUuid = m.group(0);
+      }
+    } catch (_) {}
+
+    return GeminiAttachment(
+      uploadPath: uploadPath,
+      mimeType: mimeType,
+      filename: filename,
+      processFileUuid: processFileUuid,
+      authUser: u,
+      sourceBytes: bytes,
+    );
+  }
+
+  List<dynamic> _attachmentPayloadVariants(
+      String prompt, GeminiAttachment att, String? aspectRatioHint) {
+    final variants = <dynamic>[];
+    final aspectField10 = aspectRatioHint != null
+        ? [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            [
+              null,
+              [null, aspectRatioHint]
+            ]
+          ]
+        : null;
+    final desc1 = att.processFileUuid != null
+        ? [att.uploadPath, 1, null, att.mimeType, att.processFileUuid]
+        : [att.uploadPath, 1, null, att.mimeType];
+    final att1 = [
+      desc1,
+      att.filename,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      [0]
+    ];
+    final first1 = aspectField10 != null
+        ? [
+            prompt,
+            0,
+            null,
+            [att1],
+            null,
+            null,
+            0,
+            null,
+            null,
+            aspectField10
+          ]
+        : [
+            prompt,
+            0,
+            null,
+            [att1],
+            null,
+            null,
+            0
+          ];
+    final inner1 = <dynamic>[
+      first1,
+      ['en'],
+      ['', '', ''],
+      null,
+      null,
+      null,
+      [1],
+      1,
+      null,
+      null,
+      1,
+      0
+    ];
+    while (inner1.length < 41) {
+      inner1.add(null);
+    }
+    inner1.add([1]); // index 41, as in the extension
+    variants.add(inner1);
+
+    final desc2 = [att.uploadPath, null, 1, att.mimeType];
+    final att2 = [
+      desc2,
+      att.filename,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      [0]
+    ];
+    variants.add([
+      [
+        prompt,
+        0,
+        null,
+        [att2],
+        null,
+        null,
+        0
+      ],
+      ['en'],
+      ['', '', ''],
+      null,
+      null,
+      null,
+      [1],
+      1,
+      null,
+      null,
+      1,
+      0
+    ]);
+    variants.add([
+      [
+        prompt,
+        0,
+        null,
+        [
+          [
+            [att.uploadPath],
+            att.filename
+          ]
+        ],
+        null,
+        null,
+        0
+      ],
+      ['en'],
+      ['', '', ''],
+      null,
+      null,
+      null,
+      [1],
+      1,
+      null,
+      null,
+      1,
+      0
+    ]);
+    return variants;
+  }
+
+  /// Extension: callGeminiStreamGenerate — image generation with the same
+  /// payload variants, token-refresh retry and quota auto-switch behaviour.
+  Future<StreamGenerateResult> callStreamGenerate({
+    required String prompt,
+    GeminiSession? session,
+    GeminiAttachment? attachment,
+    String? aspectRatioHint,
+    List<String> excludeUrls = const [],
+  }) async {
+    final payloadVariants = attachment != null
+        ? _attachmentPayloadVariants(prompt, attachment, aspectRatioHint)
+        : <dynamic>[
+            [
+              [prompt, 0, null, null, null, null, 0],
+              ['en'],
+              ['', '', ''],
+              null,
+              null,
+              null,
+              [1],
+              1,
+              null,
+              null,
+              1,
+              0
+            ]
+          ];
+
+    var lastParsed = const StreamGenerateResult([], '');
+    var activeSession = session ?? await getSession();
+    var currentAttachment = attachment;
+    var switchedOnce = false;
+
+    var vIdx = 0;
+    while (vIdx < payloadVariants.length) {
+      if (currentAttachment != null &&
+          currentAttachment.authUser != activeSession.authUser) {
+        currentAttachment = await uploadImageForImg2Img(
+          currentAttachment.sourceBytes,
+          currentAttachment.filename,
+          activeSession,
+          mimeType: currentAttachment.mimeType,
+        );
+        // Rebuild variants against the re-uploaded attachment.
+        payloadVariants
+          ..clear()
+          ..addAll(_attachmentPayloadVariants(
+              prompt, currentAttachment, aspectRatioHint));
+        vIdx = 0;
+      }
+
+      final innerPayload = payloadVariants[vIdx];
+      final u = activeSession.authUser;
+      final body = {
+        'f.req': jsonEncode([null, jsonEncode(innerPayload)]),
+        'at': activeSession.at,
+      };
+      var response = await _client.post(
+          _rpcUri(activeSession, 'StreamGenerate'),
+          headers: _rpcHeaders(activeSession.cookieHeader),
+          body: body);
+
+      if (response.statusCode == 401 ||
+          response.statusCode == 403 ||
+          response.statusCode == 400) {
+        activeSession =
+            await getSession(forceRefresh: true, explicitAuthUser: u);
+        body['at'] = activeSession.at;
+        response = await _client.post(_rpcUri(activeSession, 'StreamGenerate'),
+            headers: _rpcHeaders(activeSession.cookieHeader), body: body);
+      }
+
+      if ((response.statusCode == 429 || response.statusCode == 503) &&
+          !switchedOnce) {
+        final failover = await trySwitchToNextAccount(u);
+        if (failover != null) {
+          switchedOnce = true;
+          activeSession = failover;
+          continue; // retry same variant on the new account
+        }
+      }
+
+      if (response.statusCode != 200) {
+        if (vIdx == payloadVariants.length - 1) {
+          throw Exception(
+              'StreamGenerate RPC failed on u/$u with HTTP ${response.statusCode}');
+        }
+        vIdx++;
+        continue;
+      }
+
+      final parsed =
+          parseStreamGenerateResponse(response.body, excludeUrls: excludeUrls);
+      lastParsed = parsed;
+      if (parsed.urls.isNotEmpty) return parsed;
+
+      if (!switchedOnce &&
+          (isQuotaOrLimitFailure(200, parsed.assistantText) ||
+              vIdx == payloadVariants.length - 1)) {
+        final failover = await trySwitchToNextAccount(u);
+        if (failover != null) {
+          switchedOnce = true;
+          activeSession = failover;
+          vIdx = 0;
+          continue;
+        }
+      }
+      vIdx++;
+    }
+    return lastParsed;
+  }
+}
