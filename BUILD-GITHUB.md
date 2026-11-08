@@ -39,8 +39,7 @@
   Visual Studio 2026-এর জন্য Flutter 3.24 build fail করে (Signtech-এ
   এই সমস্যা হয়েছিল)। Flutter version কোনোদিন আপগ্রেড করলে এই লাইনটা
   আবার যাচাই করো।
-- Windows build-এর আগে workflow নিজে **NuGet** PATH-এ আছে কিনা দেখে,
-  না থাকলে download করে নেয় (flutter_inappwebview-এর Windows অংশের জন্য লাগে)।
+- অপ্রয়োজনীয় `flutter_inappwebview` প্লাগইন অপসারিত হয়েছে; Android-এ সরাসরি GeckoView এবং Windows-এ সরাসরি Chromium ব্যবহার হওয়ায় বিল্ড দ্রুত ও হালকা হয়েছে।
 - APK আপাতত **debug key** দিয়ে signed — সরাসরি install হবে। Play Store-এ
   দিতে চাইলে নিজের keystore লাগবে (README দেখো)।
 

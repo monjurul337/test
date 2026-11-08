@@ -50,14 +50,19 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
-      - name: Analyze (warnings only, build continues)
+      - name: Analyze
         run: flutter analyze || true
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --target-platform android-arm64 --verbose
 
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk GeminiHDStudio-v1.0.0-release.apk
+        run: |
+          if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            cp build/app/outputs/flutter-apk/app-release.apk GeminiHDStudio-v1.0.0-release.apk
+          else
+            cp build/app/outputs/flutter-apk/app-*-release.apk GeminiHDStudio-v1.0.0-release.apk
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
