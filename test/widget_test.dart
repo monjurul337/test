@@ -74,6 +74,12 @@ void main() {
     expect(parsed.assistantText, 'Hello world answer');
     expect(parsed.urls.length, 1);
     expect(parsed.urls.first, startsWith('https://lh3.googleusercontent.com/gg-dl/'));
+    // The URL must come back EXACTLY as issued, size suffix
+    // included — the v19/v20 bug was returning the stripped base,
+    // whose every reconstruction the CDN refused with HTTP 403.
+    expect(
+        parsed.urls.first,
+        'https://lh3.googleusercontent.com/gg-dl/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd=s1024');
     // excluded urls are filtered by base key
     final parsed2 = api.parseStreamGenerateResponse(raw, excludeUrls: parsed.urls);
     expect(parsed2.urls, isEmpty);
@@ -579,38 +585,53 @@ void main() {
     });
   });
 
-  group('GeminiApi.hdUrlCandidates', () {
-    test('s2048-rj first for a preview-suffixed gg-dl url', () {
-      const base =
+  group('GeminiApi.downloadCandidates', () {
+    test('issued url first, verbatim, for a preview-suffixed gg-dl url',
+        () {
+      const issued =
           'https://lh3.googleusercontent.com/gg-dl/AbCdEf=s1024-rj';
-      expect(GeminiApi.hdUrlCandidates(base), [
+      expect(GeminiApi.downloadCandidates(issued), [
+        issued,
+        'https://lh3.googleusercontent.com/gg-dl/AbCdEf=d-I?alr=yes',
         'https://lh3.googleusercontent.com/gg-dl/AbCdEf=s2048-rj',
-        base,
+        'https://lh3.googleusercontent.com/gg-dl/AbCdEf',
         'https://lh3.googleusercontent.com/gg-dl/AbCdEf=s0',
       ]);
     });
 
-    test('plain =s1024 suffix is replaced, not stacked', () {
-      const base = 'https://lh3.googleusercontent.com/gg-dl/XyZ=s1024';
-      final c = GeminiApi.hdUrlCandidates(base);
-      expect(c.first, 'https://lh3.googleusercontent.com/gg-dl/XyZ=s2048-rj');
-      expect(c, isNot(contains('https://lh3.googleusercontent.com/gg-dl/XyZ=s1024=s2048-rj')));
+    test('plain =s1024 suffix is replaced, not stacked, in derived forms',
+        () {
+      const issued = 'https://lh3.googleusercontent.com/gg-dl/XyZ=s1024';
+      final c = GeminiApi.downloadCandidates(issued);
+      expect(c.first, issued);
+      expect(c,
+          contains('https://lh3.googleusercontent.com/gg-dl/XyZ=s2048-rj'));
+      expect(
+          c,
+          isNot(contains(
+              'https://lh3.googleusercontent.com/gg-dl/XyZ=s1024=s2048-rj')));
     });
 
-    test('no suffix: candidates are appended forms plus the original', () {
-      const base = 'https://lh3.googleusercontent.com/gg/ABC123';
-      expect(GeminiApi.hdUrlCandidates(base), [
+    test('no suffix: bare token is the issued form, then derived forms',
+        () {
+      const issued = 'https://lh3.googleusercontent.com/gg/ABC123';
+      expect(GeminiApi.downloadCandidates(issued), [
+        issued,
+        'https://lh3.googleusercontent.com/gg/ABC123=d-I?alr=yes',
         'https://lh3.googleusercontent.com/gg/ABC123=s2048-rj',
-        base,
+        'https://lh3.googleusercontent.com/gg/ABC123=s1024-rj',
         'https://lh3.googleusercontent.com/gg/ABC123=s0',
       ]);
     });
 
-    test('already s2048-rj: no duplicates', () {
-      const base = 'https://lh3.googleusercontent.com/gg-dl/Q=s2048-rj';
-      final c = GeminiApi.hdUrlCandidates(base);
+    test('issued download form keeps its query; base strips it', () {
+      const issued =
+          'https://lh3.googleusercontent.com/gg-dl/Q9=d-I?alr=yes';
+      final c = GeminiApi.downloadCandidates(issued);
+      expect(c.first, issued);
       expect(c.length, c.toSet().length);
-      expect(c.first, base);
+      expect(
+          c, contains('https://lh3.googleusercontent.com/gg-dl/Q9=s2048-rj'));
     });
   });
 

@@ -441,9 +441,8 @@ class GeminiApi {
     int? errorCode;
 
     final excludeBase = excludeUrls
-        .map((u) => u
-            .replaceAll(RegExp(r'''["'\\]+$'''), '')
-            .replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), ''))
+        .map((u) =>
+            _urlBaseKey(u.replaceAll(RegExp(r'''["'\\]+$'''), '')))
         .toSet();
 
     for (final line in rawText.split('\n')) {
@@ -500,15 +499,28 @@ class GeminiApi {
     final source = candidateUrls.isNotEmpty ? candidateUrls : fallbackUrls;
     final baseMap = <String, String>{};
     for (final url in source) {
-      final clean = url
-          .replaceAll(RegExp(r'''["'\\]+$'''), '')
-          .replaceAll(RegExp(r'\?.*$'), '');
-      final baseKey = clean.replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
+      // Keep the URL EXACTLY as Gemini issued it — size suffix AND
+      // query string included. The extension-era parser returned the
+      // suffix-stripped base key instead, which silently destroyed
+      // the one form the CDN had actually signed: every later
+      // reconstruction (=s0, =s2048-rj, bare) was refused with
+      // HTTP 403 on device (2026-11-09, v19/v20 builds). Dedup and
+      // exclusion still key on the stripped base, but the VALUES —
+      // the full issued URLs — are what callers now receive.
+      final clean = url.replaceAll(RegExp(r'''["'\\]+$'''), '');
+      final baseKey = _urlBaseKey(clean);
       if (!excludeBase.contains(baseKey)) baseMap[baseKey] = clean;
     }
-    return StreamGenerateResult(baseMap.keys.toList(), assistantText,
+    return StreamGenerateResult(baseMap.values.toList(), assistantText,
         errorCode: errorCode);
   }
+
+  /// The dedup/exclusion key of an image URL: query string and
+  /// trailing `=size` suffix removed.
+  static String _urlBaseKey(String url) => url
+      .split('?')
+      .first
+      .replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
 
   Uri _rpcUri(GeminiSession s, String rpcName) {
     final params = <String, String>{
@@ -1104,65 +1116,146 @@ class GeminiApi {
   // HD image fetch + resumable upload (img2img) + StreamGenerate for images
   // ---------------------------------------------------------------------
 
-  /// Download-size candidates for a generated image URL, best
-  /// first. The extension-era '=s0' form is dead: today's gg-dl
-  /// URLs refuse it with HTTP 403 (seen on device 2026-11-09 —
-  /// generation succeeded, the HD fetch failed). The current
-  /// sanctioned large form is '=s2048-rj', the same fallback the
-  /// maintained gemini-webapi client uses when its full-size RPC
-  /// is unavailable. Then the URL exactly as issued, then the
-  /// legacy '=s0' as a last resort.
-  static List<String> hdUrlCandidates(String baseUrl) {
-    final noQuery = baseUrl.split('?').first;
-    final base = noQuery.replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
+  /// Download candidates for a generated image URL, best first.
+  ///
+  /// History, learned the hard way on device: the extension-era
+  /// '=s0' rewrite died first (v19 screenshot, HTTP 403), then the
+  /// v20 ladder (=s2048-rj / bare / =s0) ALL returned 403 — because
+  /// the parser had already stripped the issued suffix before the
+  /// fetch ever saw the URL, so the one signed form was never
+  /// tried. Gemini's display URLs (/gg/) and download URLs
+  /// (/gg-dl/) are different signed schemes and suffix rewriting
+  /// cannot turn one into the other (packet-capture verified by
+  /// the banana-pick project, November 2026). So the ladder is:
+  ///   1. the URL exactly as Gemini issued it (suffix + query),
+  ///   2. the '=d-I?alr=yes' download form — the shape the signed
+  ///      gg-dl URL returned by Gemini's own c8o8Fe download RPC
+  ///      carries,
+  ///   3. '=s2048-rj' (gemini-webapi's documented fallback),
+  ///   4. '=s1024-rj' (the standard issued preview size),
+  ///   5. the bare token URL,
+  ///   6. the legacy '=s0'.
+  static List<String> downloadCandidates(String issuedUrl) {
+    final issued = issuedUrl.trim();
+    final base = _urlBaseKey(issued);
     final out = <String>[];
     void add(String u) {
       if (u.isNotEmpty && !out.contains(u)) out.add(u);
     }
 
+    add(issued);
+    add('$base=d-I?alr=yes');
     add('$base=s2048-rj');
-    add(baseUrl);
+    add('$base=s1024-rj');
+    add(base);
     add('$base=s0');
     return out;
   }
 
-  static String _candidateLabel(String url) {
+  static String _candidateLabel(String url, String issuedUrl) {
+    if (url == issuedUrl) return 'as-issued';
+    if (url.contains('=d-I')) return '=d-I';
     final m = RegExp(r'(=[a-zA-Z0-9\-_]+)$').firstMatch(url.split('?').first);
-    return m != null ? m.group(1)! : 'as-issued';
+    return m != null ? m.group(1)! : 'bare';
   }
 
-  /// Downloads a generated image, walking the size candidates
-  /// until one serves the picture. The failure message names
-  /// every form tried and its outcome, so a future break is
-  /// diagnosable from the user's screenshot alone.
+  /// Which signed scheme a Gemini image URL belongs to, for error
+  /// messages: gg (display), gg-dl / rd-gg-dl (download), other.
+  static String _urlScheme(String url) {
+    if (url.contains('/rd-gg-dl/')) return 'rd-gg-dl';
+    if (url.contains('/gg-dl/')) return 'gg-dl';
+    if (url.contains('/gg/')) return 'gg';
+    return 'other';
+  }
+
+  /// Downloads a generated image, walking the candidate forms
+  /// until one serves the picture. First pass sends the account's
+  /// session cookies; if every form is refused, a second pass
+  /// retries the leading forms WITHOUT cookies — these CDN URLs
+  /// are bearer tokens, and a stale cookie can poison an otherwise
+  /// valid one. The failure message names the URL scheme plus
+  /// every form tried and its outcome (with Google's own error
+  /// text where it sent any), so a future break is diagnosable
+  /// from the user's screenshot alone.
   Future<HdFetchResult> fetchHdBlob(
-      String baseUrl, GeminiSession session) async {
+      String issuedUrl, GeminiSession session) async {
+    final candidates = downloadCandidates(issuedUrl);
     final failures = <String>[];
-    for (final candidate in hdUrlCandidates(baseUrl)) {
+    for (final candidate in candidates) {
       try {
-        return await _fetchImage(candidate, session);
+        return await _fetchImage(candidate, session, withCookies: true);
       } catch (e) {
-        failures.add('${_candidateLabel(candidate)}: $e');
+        failures.add('${_candidateLabel(candidate, issuedUrl)}: $e');
       }
     }
-    throw Exception('Gemini image download failed (${failures.join('; ')})');
+    for (final candidate in candidates.take(3)) {
+      try {
+        return await _fetchImage(candidate, session, withCookies: false);
+      } catch (e) {
+        failures.add(
+            '${_candidateLabel(candidate, issuedUrl)} (no-cookie): $e');
+      }
+    }
+    throw Exception(
+        'Gemini image download failed [${_urlScheme(issuedUrl)}] '
+        '(${failures.join('; ')})');
   }
 
-  /// One download attempt: GET [startUrl] with the account's
-  /// session cookies (the request shape the web client itself
-  /// uses: UA + Referer + cookies). A text/plain body holding a
-  /// URL is a download hand-off — follow it verbatim, a few times.
-  Future<HdFetchResult> _fetchImage(
-      String startUrl, GeminiSession session) async {
+  /// Google's error pages are HTML; pull a short plain-text
+  /// snippet out of one so a screenshot shows WHY it refused.
+  static String _errorSnippet(String body) {
+    final text = body
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (text.isEmpty) return '';
+    return text.length > 80 ? text.substring(0, 80) : text;
+  }
+
+  static bool _looksLikeImage(Uint8List b) {
+    if (b.length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) {
+      return true; // JPEG
+    }
+    if (b.length >= 4 &&
+        b[0] == 0x89 &&
+        b[1] == 0x50 &&
+        b[2] == 0x4E &&
+        b[3] == 0x47) {
+      return true; // PNG
+    }
+    if (b.length >= 12 &&
+        b[0] == 0x52 &&
+        b[1] == 0x49 &&
+        b[2] == 0x46 &&
+        b[3] == 0x46 &&
+        b[8] == 0x57 &&
+        b[9] == 0x45 &&
+        b[10] == 0x42 &&
+        b[11] == 0x50) {
+      return true; // WebP
+    }
+    return false;
+  }
+
+  /// One download attempt: GET [startUrl] (UA + Referer, plus the
+  /// session cookies unless [withCookies] is false). A text/plain
+  /// body holding a URL is a download hand-off — the signed
+  /// gg-dl chain serves two of those — follow it verbatim, a few
+  /// times.
+  Future<HdFetchResult> _fetchImage(String startUrl, GeminiSession session,
+      {required bool withCookies}) async {
     var currentUrl = startUrl;
     for (var hop = 0; hop < 4; hop++) {
       final resp = await _client.get(Uri.parse(currentUrl), headers: {
         'User-Agent': chromeUserAgent,
         'Referer': 'https://gemini.google.com/',
-        if (session.cookieHeader.isNotEmpty) 'Cookie': session.cookieHeader,
+        if (withCookies && session.cookieHeader.isNotEmpty)
+          'Cookie': session.cookieHeader,
       });
       if (resp.statusCode != 200) {
-        throw Exception('HTTP ${resp.statusCode}');
+        final snippet = _errorSnippet(resp.body);
+        throw Exception(
+            'HTTP ${resp.statusCode}${snippet.isEmpty ? '' : ' — $snippet'}');
       }
       final contentType = (resp.headers['content-type'] ?? '').toLowerCase();
       if (contentType.contains('text/plain')) {
@@ -1174,12 +1267,16 @@ class GeminiApi {
         throw Exception('unexpected text/plain body');
       }
       if (!contentType.contains('image/') &&
-          !contentType.contains('octet-stream')) {
+          !contentType.contains('octet-stream') &&
+          !_looksLikeImage(resp.bodyBytes)) {
         throw Exception('unexpected content-type "$contentType"');
       }
-      final mimeType = contentType.contains('png')
+      final bytes = resp.bodyBytes;
+      final isPng = bytes.length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50;
+      final isWebp = bytes.length >= 12 && bytes[8] == 0x57 && bytes[9] == 0x45;
+      final mimeType = (contentType.contains('png') || isPng)
           ? 'image/png'
-          : contentType.contains('webp')
+          : (contentType.contains('webp') || isWebp)
               ? 'image/webp'
               : 'image/jpeg';
       final ext = mimeType == 'image/png'

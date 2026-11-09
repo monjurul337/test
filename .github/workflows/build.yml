@@ -92,7 +92,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Workflow version (v17)
-        run: echo "WORKFLOW FILE VERSION = v17 (Flutter 3.35.x toolchain, GeminiHDStudio.exe name fix applied)"
+        run: echo "WORKFLOW FILE VERSION = v21 (image download fix: issued URL verbatim + download-form ladder)"
 
       - name: Checkout
         uses: actions/checkout@v4
