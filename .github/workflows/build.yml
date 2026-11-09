@@ -54,7 +54,7 @@ jobs:
         run: flutter analyze || true
 
       - name: Build release APK
-        run: flutter build apk --release --target-platform android-arm64 --verbose
+        run: flutter build apk --release --target-platform android-arm64 --no-shrink
 
       - name: Rename APK
         run: |
