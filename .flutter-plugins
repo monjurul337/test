@@ -1,11 +1,5 @@
 # This is a generated file; do not edit or check into version control.
 file_picker=/home/hatch/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
-flutter_inappwebview=/home/hatch/.pub-cache/hosted/pub.dev/flutter_inappwebview-6.1.5/
-flutter_inappwebview_android=/home/hatch/.pub-cache/hosted/pub.dev/flutter_inappwebview_android-1.1.3/
-flutter_inappwebview_ios=/home/hatch/.pub-cache/hosted/pub.dev/flutter_inappwebview_ios-1.1.2/
-flutter_inappwebview_macos=/home/hatch/.pub-cache/hosted/pub.dev/flutter_inappwebview_macos-1.1.2/
-flutter_inappwebview_web=/home/hatch/.pub-cache/hosted/pub.dev/flutter_inappwebview_web-1.1.2/
-flutter_inappwebview_windows=/home/hatch/.pub-cache/hosted/pub.dev/flutter_inappwebview_windows-0.6.0/
 flutter_plugin_android_lifecycle=/home/hatch/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.26/
 path_provider=/home/hatch/.pub-cache/hosted/pub.dev/path_provider-2.1.5/
 path_provider_android=/home/hatch/.pub-cache/hosted/pub.dev/path_provider_android-2.2.15/

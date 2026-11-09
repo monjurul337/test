@@ -14,7 +14,7 @@ Run workflow offers a build choice: **all** / **android** /
 **windows**. Build from GitHub Actions — see **BUILD-GITHUB.md**
 (Bangla guide).
 
-Package: `com.geminihd.studio` · Flutter **3.24.5** · Android side **Kotlin** · JDK **17**
+Package: `com.geminihd.studio` · Flutter **3.35.x** · Android side **Kotlin** · JDK **17**
 
 ---
 

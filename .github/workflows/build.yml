@@ -40,10 +40,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Flutter 3.24.5
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-35
+            platforms;android-36
+            build-tools;35.0.0
+
+      - name: Setup Flutter 3.35.x
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.35.x'
           channel: stable
           cache: true
 
@@ -54,7 +63,9 @@ jobs:
         run: flutter analyze || true
 
       - name: Build release APK
-        run: flutter build apk --release
+        # arm64 only: the built-in GeckoView engine is bundled for
+        # arm64-v8a (every Android 8+ phone from the last years).
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk GeminiHDStudio-v1.0.0-release.apk
@@ -76,20 +87,20 @@ jobs:
     name: Windows App + Setup .exe
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'windows' }}
     # windows-2022 badhyotamulok: windows-latest-e ekhon sudhu Visual
-    # Studio 2026 thake, jeta Flutter 3.24 chene na (Signtech-e ei
-    # problem-e build fail hoyechilo). windows-2022-te VS 2022 ache.
+    # Studio 2026 thake; Flutter 3.35.x VS 2022 diyei proven
+    # (source app-o tai use kore). windows-2022-te VS 2022 ache.
     runs-on: windows-2022
     steps:
-      - name: Workflow version (v9 FIXED)
-        run: echo "WORKFLOW FILE VERSION = v9-fixed (GeminiHDStudio.exe name fix applied)"
+      - name: Workflow version (v17)
+        run: echo "WORKFLOW FILE VERSION = v17 (Flutter 3.35.x toolchain, GeminiHDStudio.exe name fix applied)"
 
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Flutter 3.24.5
+      - name: Setup Flutter 3.35.x
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.35.x'
           channel: stable
           cache: true
 
@@ -98,20 +109,6 @@ jobs:
 
       - name: Get packages
         run: flutter pub get
-
-      - name: Ensure NuGet on PATH (flutter_inappwebview Windows needs it)
-        shell: pwsh
-        run: |
-          $nuget = Get-Command nuget -ErrorAction SilentlyContinue
-          if (-not $nuget) {
-            Write-Host "nuget not found - downloading nuget.exe..."
-            New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\nuget" | Out-Null
-            Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "$env:RUNNER_TEMP\nuget\nuget.exe"
-            "$env:RUNNER_TEMP\nuget" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-            Write-Host "nuget.exe added to PATH"
-          } else {
-            Write-Host "nuget found: $($nuget.Source)"
-          }
 
       - name: Build Windows release
         run: flutter build windows --release

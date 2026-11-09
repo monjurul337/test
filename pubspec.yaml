@@ -10,11 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  # WebView for the Gemini login screen. Android side is Kotlin
-  # (flutter_inappwebview_android), Windows side uses WebView2.
-  # Same plugin the user's Signtech app already builds with on
-  # Flutter 3.24.5 — pinned to the 6.1.x line on purpose.
-  flutter_inappwebview: 6.1.5
+  # No WebView plugin: sign-in + browsing use the built-in Firefox
+  # engine (Android, GeckoView) and the app's own Chrome/Edge
+  # window (Windows). flutter_inappwebview was removed in v17 —
+  # it was unused in lib/ and its old Android module risked
+  # breaking the AGP 8.9 / Kotlin 2.3 toolchain.
   http: ^1.2.2
   path: ^1.9.0
   shared_preferences: ^2.3.2

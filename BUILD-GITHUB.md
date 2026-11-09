@@ -34,13 +34,15 @@
    workflow আবার চলবে আর APK + Setup দুটোই Release-এ attach হবে।
 
 ## Build configuration (যা আগে থেকে ঠিক করা আছে)
-- Flutter **3.24.5** pinned, Android job-এ **JDK 17** (temurin)।
+- Flutter **3.35.x**, Android job-এ **JDK 17** (temurin)। Toolchain
+  AI Image Studio source app-er shathe milano (v17): AGP **8.9.1**,
+  Gradle **8.12**, Kotlin **2.3.21**, compileSdk **36**,
+  GeckoView **152**। GeckoView 154+ nite hole AGP 9.1 lagbe — ekhon na।
 - Windows job **`windows-2022`** runner-এ চলে — `windows-latest` নিলে
-  Visual Studio 2026-এর জন্য Flutter 3.24 build fail করে (Signtech-এ
-  এই সমস্যা হয়েছিল)। Flutter version কোনোদিন আপগ্রেড করলে এই লাইনটা
-  আবার যাচাই করো।
-- Windows build-এর আগে workflow নিজে **NuGet** PATH-এ আছে কিনা দেখে,
-  না থাকলে download করে নেয় (flutter_inappwebview-এর Windows অংশের জন্য লাগে)।
+  Visual Studio 2026 আসে; 3.35.x VS 2022 দিয়েই proven। Flutter
+  version কোনোদিন আপগ্রেড করলে এই লাইনটা আবার যাচাই করো।
+- flutter_inappwebview **নেই** (v17-এ সরানো হয়েছে — ব্যবহারই হতো না),
+  তাই Windows build-এ আলাদা NuGet step-ও লাগে না।
 - APK আপাতত **debug key** দিয়ে signed — সরাসরি install হবে। Play Store-এ
   দিতে চাইলে নিজের keystore লাগবে (README দেখো)।
 
