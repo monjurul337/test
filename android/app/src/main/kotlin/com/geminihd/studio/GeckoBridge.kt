@@ -216,7 +216,11 @@ object GeckoBridge {
 
     // ------------------------------------------------- Image Search browser
     fun browserSession(context: Context): GeckoSession {
-        browserSession?.let { if (it.isOpen) return it }
+        try {
+            if (browserSession?.isOpen == true) {
+                browserSession?.close()
+            }
+        } catch (_: Exception) {}
         val s = GeckoSession(
             GeckoSessionSettings.Builder()
                 .usePrivateMode(false)
@@ -228,12 +232,22 @@ object GeckoBridge {
         return s
     }
 
-    fun hasBrowserSession(): Boolean = browserSession?.isOpen == true
+    fun clearBrowserSession() {
+        try {
+            if (browserSession?.isOpen == true) {
+                browserSession?.close()
+            }
+        } catch (_: Exception) {}
+        browserSession = null
+    }
+
+    fun hasBrowserSession(): Boolean = browserSession?.isOpen == true && browserActivity != null
 
     fun browserOpen(activity: Activity, url: String?) {
         val i = Intent(activity, GeckoBrowserActivity::class.java)
         if (url != null) i.putExtra("url", url)
         i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        i.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         activity.startActivity(i)
     }
 

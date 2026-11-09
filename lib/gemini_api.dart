@@ -19,11 +19,13 @@
 //      in the login screen — same jar, same code path afterwards.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'gecko_browser.dart';
 import 'models.dart';
 import 'session_store.dart';
 import 'studio_constants.dart';
@@ -310,7 +312,7 @@ class GeminiApi {
     if (node == null) return;
     if (node is String) {
       final re = RegExp(
-          r'https://(?:lh3\.googleusercontent\.com|[a-zA-Z0-9\-]+\.fife\.usercontent\.google\.com)/[a-zA-Z0-9_\-/=%+]+');
+          r'https://(?:lh[0-9]\.googleusercontent\.com|[a-zA-Z0-9\-_]+\.googleusercontent\.com|[a-zA-Z0-9\-_]+\.usercontent\.google\.com)/[a-zA-Z0-9_\-/=%+]+');
       for (final m in re.allMatches(node)) {
         final url = m.group(0)!;
         if (!url.contains('/a/') && !url.contains('/a-/') && url.length > 48) {
@@ -393,7 +395,7 @@ class GeminiApi {
         .replaceAll(r'\u0026', '&')
         .replaceAll(r'\/', '/');
     final directRe = RegExp(
-        r'https://(?:lh3\.googleusercontent\.com|[a-zA-Z0-9\-]+\.fife\.usercontent\.google\.com)/(?:gg-dl|rd-gg-dl|gg)/[a-zA-Z0-9_\-/=%+]+');
+        r'https://(?:lh[0-9]\.googleusercontent\.com|[a-zA-Z0-9\-_]+\.googleusercontent\.com|[a-zA-Z0-9\-_]+\.usercontent\.google\.com)/(?:gg-dl|rd-gg-dl|gg)/[a-zA-Z0-9_\-/=%+]+');
     for (final m in directRe.allMatches(unescaped)) {
       fallbackUrls.add(m.group(0)!);
     }
@@ -995,6 +997,11 @@ class GeminiApi {
   // ---------------------------------------------------------------------
 
   String _toHdImageUrl(String baseUrl) {
+    if (baseUrl.contains('/gg-dl/') ||
+        baseUrl.contains('/rd-gg-dl/') ||
+        baseUrl.contains('/gg/')) {
+      return baseUrl;
+    }
     final withoutQuery = baseUrl.replaceAll(RegExp(r'\?.*$'), '');
     final stripped = withoutQuery.replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
     return '$stripped=s0';
@@ -1002,42 +1009,169 @@ class GeminiApi {
 
   Future<HdFetchResult> fetchHdBlob(
       String baseUrl, GeminiSession session) async {
-    var currentUrl = _toHdImageUrl(baseUrl);
-    for (var hop = 0; hop < 4; hop++) {
-      final resp = await _client.get(Uri.parse(currentUrl), headers: {
+    final candidateUrls = <String>[];
+
+    final isGgDl = baseUrl.contains('/gg-dl/') ||
+        baseUrl.contains('/rd-gg-dl/') ||
+        baseUrl.contains('/gg/');
+
+    if (isGgDl) {
+      candidateUrls.add(baseUrl);
+      final withoutQuery = baseUrl.replaceAll(RegExp(r'\?.*$'), '');
+      if (!candidateUrls.contains(withoutQuery)) {
+        candidateUrls.add(withoutQuery);
+      }
+      final hdUrl = _toHdImageUrl(baseUrl);
+      if (!candidateUrls.contains(hdUrl)) {
+        candidateUrls.add(hdUrl);
+      }
+    } else {
+      final hdUrl = _toHdImageUrl(baseUrl);
+      candidateUrls.add(hdUrl);
+      if (!candidateUrls.contains(baseUrl)) {
+        candidateUrls.add(baseUrl);
+      }
+      final withoutQuery = baseUrl.replaceAll(RegExp(r'\?.*$'), '');
+      if (!candidateUrls.contains(withoutQuery)) {
+        candidateUrls.add(withoutQuery);
+      }
+      final stripped = withoutQuery.replaceAll(RegExp(r'=[a-zA-Z0-9\-_]+$'), '');
+      if (!candidateUrls.contains('$stripped=s2048')) {
+        candidateUrls.add('$stripped=s2048');
+      }
+      if (!candidateUrls.contains('$stripped=w1620-h2880')) {
+        candidateUrls.add('$stripped=w1620-h2880');
+      }
+      if (!candidateUrls.contains(stripped)) {
+        candidateUrls.add(stripped);
+      }
+    }
+
+    final headerSets = <Map<String, String>>[
+      // 1. Clean CDN headers (standard browser fetch, no cookies)
+      {
+        'User-Agent': chromeUserAgent,
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Fetch-Dest': 'image',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      // 2. With Referer
+      {
+        'User-Agent': chromeUserAgent,
+        'Referer': 'https://gemini.google.com/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Fetch-Dest': 'image',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      // 3. With Referer & Cookie
+      if (session.cookieHeader.isNotEmpty)
+        {
+          'User-Agent': chromeUserAgent,
+          'Referer': 'https://gemini.google.com/',
+          'Cookie': session.cookieHeader,
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        },
+      // 4. Legacy Origin & Cookie
+      {
         'User-Agent': chromeUserAgent,
         'Origin': 'https://gemini.google.com',
         'Referer': 'https://gemini.google.com/',
         if (session.cookieHeader.isNotEmpty) 'Cookie': session.cookieHeader,
-      });
-      if (resp.statusCode != 200) {
-        throw Exception(
-            'Gemini HD image fetch returned HTTP ${resp.statusCode}');
-      }
-      final contentType = (resp.headers['content-type'] ?? '').toLowerCase();
-      if (contentType.contains('text/plain')) {
-        final textBody = resp.body.trim();
-        if (textBody.startsWith('https://')) {
-          currentUrl = _toHdImageUrl(textBody);
-          continue;
+      },
+    ];
+
+    int lastStatusCode = 0;
+    String lastErrorMsg = '';
+
+    for (final url in candidateUrls) {
+      for (final headers in headerSets) {
+        var currentUrl = url;
+        for (var hop = 0; hop < 4; hop++) {
+          try {
+            final resp =
+                await _client.get(Uri.parse(currentUrl), headers: headers);
+            lastStatusCode = resp.statusCode;
+
+            if (resp.statusCode == 200) {
+              final contentType =
+                  (resp.headers['content-type'] ?? '').toLowerCase();
+              if (contentType.contains('text/plain')) {
+                final textBody = resp.body.trim();
+                if (textBody.startsWith('https://')) {
+                  currentUrl = _toHdImageUrl(textBody);
+                  continue;
+                }
+                break;
+              }
+
+              if (resp.bodyBytes.length < 100) {
+                break;
+              }
+
+              final mimeType = contentType.contains('png')
+                  ? 'image/png'
+                  : contentType.contains('webp')
+                      ? 'image/webp'
+                      : 'image/jpeg';
+              final ext = mimeType == 'image/png'
+                  ? 'png'
+                  : mimeType == 'image/webp'
+                      ? 'webp'
+                      : 'jpg';
+              return HdFetchResult(resp.bodyBytes, mimeType, ext, currentUrl);
+            } else if (resp.statusCode == 301 ||
+                resp.statusCode == 302 ||
+                resp.statusCode == 307) {
+              final loc = resp.headers['location'];
+              if (loc != null && loc.isNotEmpty) {
+                currentUrl = loc;
+                continue;
+              }
+            }
+          } catch (e) {
+            lastErrorMsg = e.toString();
+          }
+          break;
         }
-        throw Exception(
-            'Unexpected text/plain response when fetching Gemini image.');
       }
-      final mimeType = contentType.contains('png')
-          ? 'image/png'
-          : contentType.contains('webp')
-              ? 'image/webp'
-              : 'image/jpeg';
-      final ext = mimeType == 'image/png'
-          ? 'png'
-          : mimeType == 'image/webp'
-              ? 'webp'
-              : 'jpg';
-      return HdFetchResult(resp.bodyBytes, mimeType, ext, currentUrl);
     }
+
+    // Fallback: On Android, fetch through the GeckoView browser extension engine
+    if (Platform.isAndroid) {
+      for (final url in candidateUrls.take(2)) {
+        try {
+          final dataUrl = await GeckoBrowser.instance.fetchDataUrl(url);
+          if (dataUrl != null && dataUrl.startsWith('data:')) {
+            final comma = dataUrl.indexOf(',');
+            if (comma > 0) {
+              final header = dataUrl.substring(0, comma);
+              final base64Data = dataUrl.substring(comma + 1);
+              final bytes = base64Decode(base64Data);
+              if (bytes.length > 500) {
+                final mimeType = header.contains('image/png')
+                    ? 'image/png'
+                    : header.contains('image/webp')
+                        ? 'image/webp'
+                        : 'image/jpeg';
+                final ext = mimeType == 'image/png'
+                    ? 'png'
+                    : mimeType == 'image/webp'
+                        ? 'webp'
+                        : 'jpg';
+                return HdFetchResult(bytes, mimeType, ext, url);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     throw Exception(
-        'Exceeded maximum redirect hops while fetching Gemini HD image.');
+        'Gemini HD image fetch returned HTTP $lastStatusCode${lastErrorMsg.isNotEmpty ? " ($lastErrorMsg)" : ""}');
   }
 
   Future<GeminiAttachment> uploadImageForImg2Img(

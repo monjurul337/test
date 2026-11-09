@@ -342,8 +342,24 @@ class StudioEngine {
             : anchorFilename.endsWith('.webp')
                 ? 'image/webp'
                 : 'image/jpeg');
+
+    // Optimize reference upload size if larger than 3MB for faster & more reliable upload
+    Uint8List uploadAnchorBytes = anchorBytes;
+    if (uploadAnchorBytes.length > 3 * 1024 * 1024) {
+      try {
+        final decoded = img.decodeImage(uploadAnchorBytes);
+        if (decoded != null) {
+          final resized = (decoded.width > 2048 || decoded.height > 2048)
+              ? img.copyResize(decoded, width: 2048)
+              : decoded;
+          uploadAnchorBytes =
+              Uint8List.fromList(img.encodeJpg(resized, quality: 90));
+        }
+      } catch (_) {}
+    }
+
     final uploadedAnchor = await gemini.uploadImageForImg2Img(
-      anchorBytes,
+      uploadAnchorBytes,
       anchorFilename,
       session,
       mimeType: anchorMime,
@@ -393,6 +409,21 @@ class StudioEngine {
               'Generate an edited 9:16 vertical wallpaper version of this exact image: $img2imgPrompt',
           session: session,
           attachment: uploadedAnchor,
+          aspectRatioHint: '9:16',
+          excludeUrls: seenBaseUrls,
+        );
+        session = await gemini.getSession();
+      }
+      if (parsed.urls.isEmpty) {
+        // Fallback: direct prompt generation if img2img was rejected or returned empty
+        final directStagePrompt = buildImagePrompt(
+          '${prompt.trim()}, ${stageInstructions[idx]}$styleSuffix$hueAnchor$negGuard$kProFinishSuffix',
+          '9:16',
+          forceImagePrefix,
+        );
+        parsed = await gemini.callStreamGenerate(
+          prompt: directStagePrompt,
+          session: session,
           aspectRatioHint: '9:16',
           excludeUrls: seenBaseUrls,
         );
@@ -828,8 +859,13 @@ class StudioEngine {
     );
     Uint8List anchorBytes;
     if (entry.anchorHdUrl != null && entry.anchorHdUrl!.isNotEmpty) {
-      final fetched = await gemini.fetchHdBlob(entry.anchorHdUrl!, session);
-      anchorBytes = fetched.bytes;
+      try {
+        final fetched = await gemini.fetchHdBlob(entry.anchorHdUrl!, session);
+        anchorBytes = fetched.bytes;
+      } catch (_) {
+        final first = File(entry.images.first.localPath);
+        anchorBytes = await first.readAsBytes();
+      }
     } else {
       // Fall back to the first image of the set as the anchor reference.
       final first = File(entry.images.first.localPath);
@@ -852,6 +888,13 @@ class StudioEngine {
             'Generate an edited 9:16 vertical wallpaper version of this exact image: $promptText',
         session: session,
         attachment: uploaded,
+        aspectRatioHint: '9:16',
+      );
+    }
+    if (parsed.urls.isEmpty) {
+      parsed = await gemini.callStreamGenerate(
+        prompt: buildImagePrompt(promptText, '9:16', false),
+        session: session,
         aspectRatioHint: '9:16',
       );
     }

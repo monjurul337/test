@@ -108,6 +108,7 @@ class ImageService {
       throw Exception(
           'Could not decode source image (${sourceBytes.length} bytes).');
     }
+    image = img.bakeOrientation(image);
     final srcAspect = image.width / image.height;
     final targetAspect = targetWidth / targetHeight;
     if ((srcAspect - targetAspect).abs() / targetAspect > 0.002) {

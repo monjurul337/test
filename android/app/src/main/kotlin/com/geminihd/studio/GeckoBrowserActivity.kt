@@ -52,6 +52,8 @@ class GeckoBrowserActivity : Activity() {
      *  post its result back and close itself, like in a desktop browser. */
     private val popups = ArrayList<GeckoSession>()
     private val backable = HashMap<GeckoSession, Boolean>()
+    private var realPagesVisited = 0
+    private var currentUrl = ""
     private var loading = false
     private var density = 1f
 
@@ -170,12 +172,16 @@ class GeckoBrowserActivity : Activity() {
         mainSession = s
         GeckoBridge.browserState()
         val url = intent.getStringExtra("url")
-        if (url != null) load(url)
+        load(if (!url.isNullOrEmpty() && url != "about:blank") url else "https://www.pinterest.com/")
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.getStringExtra("url")?.let { load(it) }
+        setIntent(intent)
+        val url = intent.getStringExtra("url")
+        if (!url.isNullOrEmpty() && url != "about:blank") {
+            load(url)
+        }
     }
 
     private fun attach(s: GeckoSession) {
@@ -186,8 +192,18 @@ class GeckoBrowserActivity : Activity() {
                 perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
+                val u = url ?: ""
+                if (u.isEmpty() || u == "about:blank") {
+                    // Backed out to the initial blank state -> exit cleanly to the app.
+                    if (realPagesVisited > 0 && !isFinishing) {
+                        finish()
+                    }
+                    return
+                }
+                currentUrl = u
+                realPagesVisited++
                 if (session === this@GeckoBrowserActivity.session && !urlField.hasFocus())
-                    urlField.setText(url ?: "")
+                    urlField.setText(u)
             }
 
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
@@ -307,6 +323,8 @@ class GeckoBrowserActivity : Activity() {
 
     fun load(input: String) {
         val u = normalize(input)
+        if (u.isEmpty() || u == "about:blank") return
+        currentUrl = u
         urlField.setText(u)
         urlField.clearFocus()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
@@ -317,7 +335,7 @@ class GeckoBrowserActivity : Activity() {
 
     private fun normalize(input: String): String {
         val t = input.trim()
-        if (t.isEmpty()) return "https://www.google.com/imghp"
+        if (t.isEmpty() || t == "about:blank") return "https://www.pinterest.com/"
         if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://").containsMatchIn(t)) return t
         if (!t.contains(' ') && t.contains('.')) return "https://$t"
         return "https://www.google.com/search?tbm=isch&q=" +
@@ -327,20 +345,22 @@ class GeckoBrowserActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         val cur = session
-        if (cur != null && backable[cur] == true) {
-            cur.goBack()
-            return
-        }
         if (cur != null && popups.contains(cur)) {
             closePopup(cur)
             return
         }
-        @Suppress("DEPRECATION")
-        super.onBackPressed()
+        // If the user has navigated through pages on the site, go back one page.
+        // If they are on the initial landing page (realPagesVisited <= 1), close the
+        // browser cleanly and return to the app instead of falling back to "about:blank".
+        if (cur != null && backable[cur] == true && realPagesVisited > 1) {
+            realPagesVisited--
+            cur.goBack()
+            return
+        }
+        finish()
     }
 
     override fun onDestroy() {
-        // Keep the tab (and its page) alive for the next time; just detach.
         try {
             view.releaseSession()
         } catch (_: Exception) {
@@ -355,6 +375,13 @@ class GeckoBrowserActivity : Activity() {
         mainSession?.navigationDelegate = null
         mainSession?.progressDelegate = null
         mainSession?.contentDelegate = null
+        try {
+            mainSession?.close()
+        } catch (_: Exception) {
+        }
+        mainSession = null
+        session = null
+        GeckoBridge.clearBrowserSession()
         if (GeckoBridge.browserActivity === this) GeckoBridge.browserActivity = null
         GeckoBridge.browserState()
         super.onDestroy()

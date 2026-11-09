@@ -40,6 +40,7 @@
         <activity
             android:name=".GeckoBrowserActivity"
             android:exported="false"
+            android:launchMode="singleTop"
             android:theme="@android:style/Theme.Material.NoActionBar"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|density|uiMode"
             android:windowSoftInputMode="adjustResize" />
