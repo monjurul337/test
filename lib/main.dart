@@ -1074,7 +1074,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Padding(
                             padding: EdgeInsets.symmetric(
                                 horizontal: 4, vertical: 2),
-                            child: Text('BUILD v42',
+                            child: Text('BUILD v43',
                                 style: TextStyle(
                                     fontSize: 7.5,
                                     fontWeight: FontWeight.w700,
@@ -1835,29 +1835,61 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Compact dropdown with the label inside the field, for the
-  /// one-line tuning row.
+  /// Compact picker field with the label inside the box, for the
+  /// one-line tuning row. v43: a dialog picker instead of a dropdown
+  /// menu — on the user's phone the dropdown's option menu did not
+  /// show at all, while a dialog always renders.
   Widget _miniDropdown(String label, String value,
       Map<String, String> options, ValueChanged<String> onChanged) {
-    return DropdownButtonFormField<String>(
-      isExpanded: true,
-      value: value,
-      isDense: true,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      ),
-      items: options.entries
-          .map((e) => DropdownMenuItem(
-              value: e.key,
-              child: Text(e.value, overflow: TextOverflow.ellipsis)))
-          .toList(),
-      onChanged: (v) {
-        if (v != null) onChanged(v);
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () async {
+        final picked = await showDialog<String>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: Text(label),
+            children: [
+              for (final e in options.entries)
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(ctx, e.key),
+                  child: Row(
+                    children: [
+                      Icon(
+                        e.key == value
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        size: 18,
+                        color: const Color(0xFF8B7CFF),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(e.value),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+        if (picked != null) onChanged(picked);
       },
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(options[value] ?? value,
+                  overflow: TextOverflow.ellipsis),
+            ),
+            const Icon(Icons.arrow_drop_down,
+                size: 20, color: Color(0xFF9A9AA5)),
+          ],
+        ),
+      ),
     );
   }
 
