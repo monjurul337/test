@@ -337,6 +337,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final ValueNotifier<int> _queueTick = ValueNotifier<int>(0);
   Map<String, dynamic>? _queueSummary;
 
+  // Background generation readiness (v72): null until the first
+  // check at startup. False means the phone will kill the
+  // generation when the screen locks — the Studio screen shows a
+  // warning banner and generation start offers the fix dialog.
+  bool? _bgExempt;
+  bool _bgDialogShownThisSession = false;
+
   // AI prompt polish (v48).
   bool _polishing = false;
 
@@ -407,6 +414,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (info != null && info['email'] != null) {
       _sessionLabel = 'u/${info['authUser']} - ${info['email']}';
     }
+    // Background readiness (v72): know at startup whether the
+    // phone will kill a generation when the screen locks.
+    _bgExempt = await ForegroundKeepAlive.isBatteryExempt();
     if (mounted) setState(() {});
     // If a login was saved earlier, renew it right away (fresh session
     // token + rotated cookies) so the app opens already signed in.
@@ -621,6 +631,104 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Background readiness gate (v72): before a generation starts,
+  /// check whether the phone will kill it when the screen locks.
+  /// If not exempt, offer the fix once per session — the system
+  /// exemption screen, or the app settings page where HiOS keeps
+  /// Auto-start. Generation itself is never blocked: "Pore" runs
+  /// it anyway, and the amber banner stays until the phone is
+  /// exempt. Returns the current exemption state.
+  Future<bool> _ensureBackgroundReady() async {
+    final exempt = await ForegroundKeepAlive.isBatteryExempt();
+    if (mounted) setState(() => _bgExempt = exempt);
+    if (exempt || _bgDialogShownThisSession) return exempt;
+    _bgDialogShownThisSession = true;
+    final maker = await ForegroundKeepAlive.getManufacturer();
+    final transsion = <String>['tecno', 'infinix', 'itel', 'transsion']
+        .any((m) => maker.toLowerCase().contains(m));
+    if (!mounted) return exempt;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Background generation chalu rakho'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'Phone lock korle ba onno app-e gele generation thambe, jodi ei permission-ta na dao.'),
+              const SizedBox(height: 12),
+              const Text(
+                  '1. "Allow koro" chaple system-er screen khulbe — okhane "Allow" / "No restrictions" select koro.'),
+              if (transsion) ...[
+                const SizedBox(height: 8),
+                const Text(
+                    '2. TECNO / Infinix phone-e aro dorkar: Settings → Apps → Zedge Studio → Auto-start ON, ar Phone Master → Battery → Background running allow. Na korle phone nijei app-ta bondho kore dey.'),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'later'),
+              child: const Text('Pore')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'settings'),
+              child: const Text('Settings kholo')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'allow'),
+              child: const Text('Allow koro')),
+        ],
+      ),
+    );
+    if (action == 'allow') {
+      await ForegroundKeepAlive.requestBatteryExemption();
+    } else if (action == 'settings') {
+      await ForegroundKeepAlive.openAppSettings();
+    }
+    final nowExempt = await ForegroundKeepAlive.isBatteryExempt();
+    if (mounted) setState(() => _bgExempt = nowExempt);
+    return nowExempt;
+  }
+
+  /// Amber warning under the header while the phone is not
+  /// exempt from battery optimisation (v72). Tap re-opens the
+  /// fix dialog.
+  Widget _bgWarningBanner() {
+    if (_bgExempt != false) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Material(
+        color: Colors.amber.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () async {
+            _bgDialogShownThisSession = false;
+            await _ensureBackgroundReady();
+          },
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.battery_alert_outlined,
+                    size: 18, color: Colors.amber),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Background generation OFF — phone lock korle thambe. Fix korte tap koro.',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _generate() async {
     if (_busy) return;
     final prompts = _batchMode
@@ -636,6 +744,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     // Keep the whole run (single or batch) alive in the
     // background — screen off / other apps must not kill it (v33).
+    await _ensureBackgroundReady();
     await ForegroundKeepAlive.acquire(
         'Generating in the background — safe to switch apps');
     final isSetMode =
@@ -827,6 +936,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _queueLiveStatus = 'Starting queue...';
     });
     _queueTick.value++;
+    await _ensureBackgroundReady();
     await ForegroundKeepAlive.acquire(
         'Overnight queue running — safe to switch apps');
     var done = 0;
@@ -1318,7 +1428,23 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final f = await _engine.buildReadyZip(entries,
           useHubSetFolders: _useHubFolders);
-      _showPathDialog('Ready ZIP saved', f.path);
+      // v74: the ZIP used to land in the app's PRIVATE folder, which
+      // no file manager and no Downloads can see — the user only got
+      // a path dialog, so from his side the download never happened.
+      // Now open the system save picker so he picks the folder
+      // (Downloads) himself; the picker is the download on Android.
+      final bytes = await f.readAsBytes();
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Ready ZIP',
+        fileName: p.basename(f.path),
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (savedPath != null) {
+        _showPathDialog('Ready ZIP saved', savedPath);
+      } else {
+        _snack('Save cancelled — the ZIP is still in the app folder.');
+      }
     } catch (e) {
       _snack('ZIP failed: $e');
     } finally {
@@ -1419,6 +1545,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 _dashboardHeader(wide),
+                _bgWarningBanner(),
             Expanded(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1650,7 +1777,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Text('Version 2.5.06',
+                    child: Text('Version 2.5.09',
                         style: TextStyle(
                             fontSize: 7.5,
                             fontWeight: FontWeight.w700,
@@ -2047,8 +2174,33 @@ class _HomeScreenState extends State<HomeScreen> {
                     labelText:
                         _batchMode ? 'Prompts (1 line = 1 set)' : 'Prompt',
                     border: const OutlineInputBorder(),
-                    suffixIcon: _voiceSupported
-                        ? IconButton(
+                    // v73: clear button — shows only while there is
+                    // text (ListenableBuilder rebuilds on every
+                    // keystroke); clears the field and, in batch
+                    // mode, the last run's marks, like typing does.
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListenableBuilder(
+                          listenable: _promptCtrl,
+                          builder: (context, _) =>
+                              _promptCtrl.text.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : IconButton(
+                                      icon: const Icon(Icons.clear, size: 18),
+                                      tooltip: 'Clear prompt',
+                                      onPressed: _busy
+                                          ? null
+                                          : () => setState(() {
+                                                _promptCtrl.clear();
+                                                if (_batchMode) {
+                                                  _batchStatuses = const [];
+                                                }
+                                              }),
+                                    ),
+                        ),
+                        if (_voiceSupported)
+                          IconButton(
                             icon: Icon(
                                 _listening ? Icons.mic : Icons.mic_none,
                                 color: _listening
@@ -2060,8 +2212,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             onPressed: (_busy || _polishing)
                                 ? null
                                 : _toggleVoicePrompt,
-                          )
-                        : null,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

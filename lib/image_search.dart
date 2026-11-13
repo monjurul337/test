@@ -698,6 +698,20 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
     _syncBasket();
   }
 
+  /// v73: the Prompts card's Clear — clears the finished prompts
+  /// AND the per-picture prompt map, and resets the status line.
+  /// The old one-liner cleared only _readyPrompts, so the status
+  /// kept saying "N prompts ready" and a re-generate treated the
+  /// stale per-picture prompt as the previous one. The basket
+  /// selection itself stays, so the pictures can be re-generated.
+  void _clearPrompts() {
+    setState(() {
+      _readyPrompts.clear();
+      _basketPrompts.clear();
+      _promptsStatus = 'No prompts yet.';
+    });
+  }
+
   /// Selected-pictures card: after ticking pictures in the
   /// browser, the picks land here — count, source pages, and one
   /// row per picture: its thumbnail (tap x to drop it) beside its
@@ -1626,8 +1640,7 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
                           ),
                         ),
                         TextButton(
-                          onPressed: () =>
-                              setState(() => _readyPrompts.clear()),
+                          onPressed: _clearPrompts,
                           child: const Text('Clear'),
                         ),
                       ],

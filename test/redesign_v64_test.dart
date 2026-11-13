@@ -25,7 +25,7 @@ void main() {
       expect(btn.constraints!.maxHeight, 32);
       expect(btn.iconSize, 18);
     }
-    expect(find.text('Version 2.5.06'), findsOneWidget);
+    expect(find.text('Version 2.5.09'), findsOneWidget);
     expect(find.text('Zedge Studio'), findsOneWidget);
     expect(find.text('Wallpaper Set Designer'), findsOneWidget);
     expect(tester.takeException(), isNull);

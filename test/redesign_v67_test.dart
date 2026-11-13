@@ -22,7 +22,7 @@ void main() {
     expect(find.byType(NavigationBar), findsNothing);
     // Wide-only header stat chips are back.
     expect(find.text('0 sets'), findsOneWidget);
-    expect(find.text('Version 2.5.06'), findsOneWidget);
+    expect(find.text('Version 2.5.09'), findsOneWidget);
   });
 
   testWidgets('v67 phone layout unchanged: pill nav, no rail',
@@ -40,6 +40,6 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
-    expect(find.text('Version 2.5.06'), findsOneWidget);
+    expect(find.text('Version 2.5.09'), findsOneWidget);
   });
 }

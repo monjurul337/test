@@ -18,7 +18,7 @@ void main() {
     // The header tile now renders the new icon asset (32x32 since v62).
     expect(find.image(const AssetImage('assets/logo.png')), findsOneWidget);
     // Chip tracks the current build (v62 compacted the header).
-    expect(find.text('Version 2.5.06'), findsOneWidget);
+    expect(find.text('Version 2.5.09'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

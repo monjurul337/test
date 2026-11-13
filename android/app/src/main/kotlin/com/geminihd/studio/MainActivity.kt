@@ -83,11 +83,47 @@ class MainActivity : FlutterActivity() {
                             pm.isIgnoringBatteryOptimizations(packageName))
                     }
                     "requestBatteryExemption" -> {
+                        // v72: the direct request intent is blocked
+                        // on some OEM skins (HiOS included) — fall
+                        // back to the list screen where the user can
+                        // flip this app to "Unrestricted" by hand.
                         result.success(try {
                             startActivity(
                                 Intent(
                                     Settings
                                         .ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                            true
+                        } catch (e: Exception) {
+                            try {
+                                startActivity(
+                                    Intent(
+                                        Settings
+                                            .ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                    )
+                                )
+                                true
+                            } catch (e2: Exception) {
+                                false
+                            }
+                        })
+                    }
+                    // v72: the background-killer steps differ per
+                    // maker (TECNO/Infinix/itel need Auto-start +
+                    // Phone Master background allow on top of the
+                    // stock exemption), and the Auto-start toggle
+                    // lives on the app's system settings page.
+                    "getManufacturer" -> {
+                        result.success(Build.MANUFACTURER ?: "")
+                    }
+                    "openAppSettings" -> {
+                        result.success(try {
+                            startActivity(
+                                Intent(
+                                    Settings
+                                        .ACTION_APPLICATION_DETAILS_SETTINGS,
                                     Uri.parse("package:$packageName")
                                 )
                             )

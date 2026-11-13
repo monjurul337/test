@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -19,10 +20,15 @@ import android.os.PowerManager
  * no work itself — generation stays in the Flutter engine; the
  * service only holds foreground priority plus a partial wake
  * lock, and shows the ongoing notification Android requires.
+ *
+ * v72: also holds a Wi-Fi lock — on many phones Wi-Fi sleeps
+ * when the screen locks, which drops the Gemini connection even
+ * with the wake lock held.
  */
 class GenerationService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -38,6 +44,7 @@ class GenerationService : Service() {
             startForeground(NOTIF_ID, notification)
         }
         holdWakeLock()
+        holdWifiLock()
         // Not sticky: the service lives only while Dart asks for
         // it; if the process dies, the service must not resurrect
         // a stale "generating" notification on its own.
@@ -47,6 +54,8 @@ class GenerationService : Service() {
     override fun onDestroy() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        wifiLock?.let { if (it.isHeld) it.release() }
+        wifiLock = null
         super.onDestroy()
     }
 
@@ -60,6 +69,25 @@ class GenerationService : Service() {
             // Timed as a safety net: even if a stop call were ever
             // missed, the lock lets go on its own.
             acquire(MAX_WAKE_MS)
+        }
+    }
+
+    private fun holdWifiLock() {
+        if (wifiLock?.isHeld == true) return
+        try {
+            val wm = applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
+                "GeminiHDStudio:Generation"
+            ).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (_: Throwable) {
+            // Wi-Fi lock is a best effort: mobile data or a
+            // missing radio must never break the service.
+            wifiLock = null
         }
     }
 
