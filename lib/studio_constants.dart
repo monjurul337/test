@@ -47,6 +47,13 @@ const String kDefaultNegativePrompt =
     'no UI widgets, no clock, no watermark, no signature, no logo, no blurry '
     'details, no deformed anatomy';
 
+/// Foldable adaptation prompt (v58): fixed backend text. It used to
+/// be an editable field in the Studio screen; the user asked for it
+/// to live in the backend only, so the engine always applies this
+/// exact text and the UI never shows it.
+const String kFoldableAdaptationPrompt =
+    'make it landscape mode, re-frame the exact same artwork for a foldable screen without cropping the main subject';
+
 const Map<String, String> kVariationStrengths = {
   'subtle':
       'Relight the reference image so it matches the ABSOLUTE lighting state described above - treat the stated lit-area, brightness, bloom and shadow values as exact targets to hit, not as a nudge from the reference. The change must be clearly noticeable side by side. Keep the exact same subject, objects, background, layout, composition, framing and art style: nothing may be added, removed or rearranged.',

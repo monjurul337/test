@@ -422,6 +422,40 @@ class _LoginScreenState extends State<LoginScreen> {
   /// slot's saved session cookies (masked, with Save / Test / Copy /
   /// Remove). All session management lives here now — including the
   /// cookie-paste fallback for a Google-blocked sign-in.
+  /// One numbered step in the v56 login stepper.
+  Widget _loginStep(String number, String title, String sub) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: const BoxDecoration(
+              color: Color(0xFF37335F),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(number,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white)),
+          ),
+          const SizedBox(height: 6),
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(sub,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
   Widget _sessionCard() {
     final scheme = Theme.of(context).colorScheme;
     return Card(
@@ -460,13 +494,26 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
+            // v56: three numbered steps up front — the old wall of
+            // text never told a new user what to do first. The full
+            // explanation lives in the expander below, unchanged.
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline, size: 15, color: Colors.grey),
-                const SizedBox(width: 6),
-                Expanded(
+                _loginStep('1', 'Sign in', 'Gemini opens'),
+                _loginStep('2', 'Connect', 'Auto, or paste a cookie'),
+                _loginStep('3', 'Generate', 'Prompt in Studio'),
+              ],
+            ),
+            const SizedBox(height: 4),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('How sign-in works',
+                  style: TextStyle(fontSize: 13)),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     GeckoSignIn.supported
                         ? 'Sign in opens the app\'s built-in Firefox '

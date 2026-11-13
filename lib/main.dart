@@ -315,9 +315,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _promptCtrl = TextEditingController();
   final TextEditingController _negativeCtrl =
       TextEditingController(text: kDefaultNegativePrompt);
-  final TextEditingController _landscapePromptCtrl = TextEditingController(
-      text:
-          'make it landscape mode, re-frame the exact same artwork for a foldable screen without cropping the main subject');
   final TextEditingController _subfolderCtrl =
       TextEditingController(text: 'Gemini_HD');
   bool _batchMode = false;
@@ -393,7 +390,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _sessionKeepAlive?.cancel();
     _promptCtrl.dispose();
     _negativeCtrl.dispose();
-    _landscapePromptCtrl.dispose();
     _subfolderCtrl.dispose();
     for (final c in _stageCtrls.values) {
       c.dispose();
@@ -678,7 +674,6 @@ class _HomeScreenState extends State<HomeScreen> {
           aiDirectorEnabled: _aiDirector,
           autoWriteMetadata: _autoMetadata,
           includeFoldableCompanion: _foldableCompanion && isSetMode,
-          landscapePrompt: _landscapePromptCtrl.text,
           referenceBytes: _reference?.bytes,
           referenceFilename: _reference?.name ?? 'reference_image.jpg',
           referenceMime: _reference?.mime ?? 'image/jpeg',
@@ -783,7 +778,6 @@ class _HomeScreenState extends State<HomeScreen> {
       aiDirectorEnabled: _aiDirector,
       autoWriteMetadata: _autoMetadata,
       includeFoldableCompanion: _foldableCompanion && isSetMode,
-      landscapePrompt: _landscapePromptCtrl.text,
       forceImagePrefix: _forcePrefix,
       upscaleEnabled: _upscale,
       useExactZedgeNames: _useExactNames,
@@ -858,7 +852,6 @@ class _HomeScreenState extends State<HomeScreen> {
             aiDirectorEnabled: item.aiDirectorEnabled,
             autoWriteMetadata: item.autoWriteMetadata,
             includeFoldableCompanion: item.includeFoldableCompanion,
-            landscapePrompt: item.landscapePrompt,
             forceImagePrefix: item.forceImagePrefix,
             upscaleEnabled: item.upscaleEnabled,
             useExactZedgeNames: item.useExactZedgeNames,
@@ -1521,9 +1514,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Prominent dashboard header: gradient banner with the app title,
   /// quick actions, the account controls and live stat badges.
+  /// v62 (user order 2026-11-13, from his BUILD v61 phone screenshot):
+  /// the header was too tall and the title text got squeezed — logo,
+  /// title and action icons are all smaller now, paddings tighter,
+  /// and the account dropdown is dense, so the whole header takes
+  /// ~20px less height on a phone.
+  /// v64 (user order 2026-11-13: "Header card ta hight a ektu soto
+  /// koro"): shaved another ~12px — logo 30, title 16, icons 32,
+  /// tighter paddings and gaps.
+  /// v68 (user order 2026-11-13: "desktop er header high a onek
+  /// boro hoice ordek soto koro"): DESKTOP ONLY — the wide header
+  /// measured 218px, so it merges rows instead of stacking them:
+  /// the stat chips move into the title row, the session status
+  /// moves inline into the account row, logo 24, title 14, action
+  /// icons 28, tighter paddings. Wide header is now about half its
+  /// old height. The phone header is untouched.
   Widget _dashboardHeader(bool wide) {
+    final logoSize = wide ? 24.0 : 30.0;
+    final titleSize = wide ? 14.0 : 16.0;
+    final iconBox = wide ? 28.0 : 32.0;
+    final iconSize = wide ? 16.0 : 18.0;
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      margin: EdgeInsets.fromLTRB(12, wide ? 4 : 6, 12, 4),
       decoration: BoxDecoration(
         gradient: kHeaderGradient,
         borderRadius: BorderRadius.circular(24),
@@ -1532,7 +1544,7 @@ class _HomeScreenState extends State<HomeScreen> {
           BoxShadow(color: Colors.black38, blurRadius: 18, offset: Offset(0, 6)),
         ],
       ),
-      padding: EdgeInsets.fromLTRB(12, wide ? 16 : 14, 4, 12),
+      padding: EdgeInsets.fromLTRB(12, wide ? 4 : 6, 4, wide ? 4 : 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1540,82 +1552,56 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.white24),
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(9),
                   child: Image.asset(
                     'assets/logo.png',
-                    width: 40,
-                    height: 40,
+                    width: logoSize,
+                    height: logoSize,
                     fit: BoxFit.cover,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Zedge Studio',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white)),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Wallpaper Set Designer - AI Metadata - Panel Uploader',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                TextStyle(fontSize: 11, color: Colors.white70),
-                          ),
-                        ),
-                        SizedBox(width: 4),
-                        // Visible build tag: every user screenshot now
-                        // identifies WHICH build is on the phone (the
-                        // v20/v22 mix-up of 2026-11-09 was invisible
-                        // because all builds looked identical).
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(6)),
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 2),
-                            child: Text('BUILD v51',
-                                style: TextStyle(
-                                    fontSize: 7.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text('Zedge Studio',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: titleSize,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
               ),
+              // v68 (wide only): the stat chips live in the title
+              // row now, so the header loses its whole chips row.
+              if (wide) ...[
+                _statChip(Icons.grid_view_outlined, '${_history.length} sets'),
+                const SizedBox(width: 6),
+                _statChip(Icons.alternate_email, '${_accounts.length} Gmail'),
+                const SizedBox(width: 6),
+                _statChip(Icons.photo_size_select_large_outlined,
+                    '${_portraitW}x$_portraitH JPG'),
+                const SizedBox(width: 8),
+              ],
               IconButton(
                 tooltip: 'Import local set',
-                constraints:
-                    const BoxConstraints(maxWidth: 38, maxHeight: 38),
+                constraints: BoxConstraints(
+                    maxWidth: iconBox, maxHeight: iconBox),
                 padding: EdgeInsets.zero,
-                iconSize: 21,
+                iconSize: iconSize,
                 color: Colors.white,
                 onPressed: _busy ? null : _importSet,
                 icon: const Icon(Icons.folder_open_outlined),
               ),
               IconButton(
                 tooltip: 'Panel upload settings',
-                constraints:
-                    const BoxConstraints(maxWidth: 38, maxHeight: 38),
+                constraints: BoxConstraints(
+                    maxWidth: iconBox, maxHeight: iconBox),
                 padding: EdgeInsets.zero,
-                iconSize: 21,
+                iconSize: iconSize,
                 color: Colors.white,
                 onPressed: () async {
                   await Navigator.of(context).push(MaterialPageRoute(
@@ -1625,31 +1611,61 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               IconButton(
                 tooltip: 'Gemini Login',
-                constraints:
-                    const BoxConstraints(maxWidth: 38, maxHeight: 38),
+                constraints: BoxConstraints(
+                    maxWidth: iconBox, maxHeight: iconBox),
                 padding: EdgeInsets.zero,
-                iconSize: 21,
+                iconSize: iconSize,
                 color: Colors.white,
                 onPressed: () => _openLogin(),
                 icon: const Icon(Icons.account_circle_outlined),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _accountBar(),
-          if (wide) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
+          SizedBox(height: wide ? 1 : 2),
+          // v63 (user order 2026-11-13: "Zedge Studio er nise thakbe"):
+          // the subtitle sits directly under the title text, aligned
+          // with it — indented by the logo width + gap + border
+          // (30 + 6 + 2 since v64; 24 + 6 + 2 = 32 on wide since v68).
+          Padding(
+            padding: EdgeInsets.only(left: wide ? 32 : 38),
+            child: Row(
               children: [
-                _statChip(Icons.grid_view_outlined, '${_history.length} sets'),
-                _statChip(Icons.alternate_email, '${_accounts.length} Gmail'),
-                _statChip(Icons.photo_size_select_large_outlined,
-                    '${_portraitW}x$_portraitH JPG'),
+                Expanded(
+                  child: Text(
+                    'Wallpaper Set Designer',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: wide ? 10 : 11, color: Colors.white70),
+                  ),
+                ),
+                // Visible build tag: every user screenshot now
+                // identifies WHICH build is on the phone (the
+                // v20/v22 mix-up of 2026-11-09 was invisible
+                // because all builds looked identical).
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text('Version 2.5.03',
+                        style: TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+                  ),
+                ),
               ],
             ),
-          ],
+          ),
+          SizedBox(height: wide ? 2 : 4),
+          // v56: hairline divider separates the brand row from the
+          // account controls, so the header reads as two clean zones.
+          const Divider(color: Colors.white10, height: 1),
+          SizedBox(height: wide ? 2 : 4),
+          _accountBar(wide),
         ],
       ),
     );
@@ -1666,18 +1682,48 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _accountBar() {
-    final lightBtn = OutlinedButton.styleFrom(
-      foregroundColor: Colors.white,
-      side: const BorderSide(color: Colors.white38),
-      visualDensity: VisualDensity.compact,
+  /// Account row (v57 redesign): the old horizontal-scroll row
+  /// never fit — dropdown + Scan + Add Gmail + Verify + the session
+  /// chip ran past the edge and the session email was cut in half.
+  /// Now the dropdown and a ⋮ menu share one row that always fits,
+  /// and the session shows as one short status line below it. Same
+  /// actions, same labels, no scrolling, nothing cut off.
+  /// v68 (wide only): the status line moves inline into the same
+  /// row (dropdown + ⋮ + dot + status), so the desktop header
+  /// loses another full row. The ⋮ renders a plain icon child so
+  /// it stays 28px tall instead of the default 48px IconButton.
+  Widget _accountBar(bool wide) {
+    final connected = _sessionLabel != 'Not connected';
+    final status = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color:
+                connected ? const Color(0xFF4ADE80) : Colors.grey,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            _sessionLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: Colors.white70),
+          ),
+        ),
+      ],
     );
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          DropdownButton<String>(
+    final controls = Row(
+      children: [
+        Expanded(
+          child: DropdownButton<String>(
             value: _accountMode,
+            isExpanded: true,
+            isDense: true,
             underline: const SizedBox.shrink(),
             dropdownColor: const Color(0xFF171F3D),
             iconEnabledColor: Colors.white,
@@ -1701,41 +1747,78 @@ class _HomeScreenState extends State<HomeScreen> {
               if (v != null) _switchAccount(v);
             },
           ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            style: lightBtn,
-            onPressed: _busy ? null : _scanAccounts,
-            icon: const Icon(Icons.search, size: 16),
-            label: const Text('Scan'),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'Account actions',
+          padding: EdgeInsets.zero,
+          color: const Color(0xFF171F3D),
+          onSelected: (v) async {
+            if (v == 'scan') {
+              if (!_busy) await _scanAccounts();
+            } else if (v == 'add') {
+              _openLogin(
+                  authUser: _accountMode == 'auto'
+                      ? 0
+                      : int.tryParse(_accountMode) ?? 0);
+            } else if (v == 'verify') {
+              if (!_busy) await _verifySession();
+            }
+          },
+          itemBuilder: (ctx) => const [
+            PopupMenuItem(
+              value: 'scan',
+              child: Row(
+                children: [
+                  Icon(Icons.search, size: 18),
+                  SizedBox(width: 10),
+                  Text('Scan'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'add',
+              child: Row(
+                children: [
+                  Icon(Icons.add, size: 18),
+                  SizedBox(width: 10),
+                  Text('Add Gmail'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'verify',
+              child: Row(
+                children: [
+                  Icon(Icons.verified_outlined, size: 18),
+                  SizedBox(width: 10),
+                  Text('Verify'),
+                ],
+              ),
+            ),
+          ],
+          child: const Tooltip(
+            message: 'Account actions',
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: Icon(Icons.more_vert, size: 18, color: Colors.white),
+            ),
           ),
-          const SizedBox(width: 6),
-          OutlinedButton.icon(
-            style: lightBtn,
-            onPressed: () => _openLogin(
-                authUser: _accountMode == 'auto'
-                    ? 0
-                    : int.tryParse(_accountMode) ?? 0),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add Gmail'),
-          ),
-          const SizedBox(width: 6),
-          OutlinedButton.icon(
-            style: lightBtn,
-            onPressed: _busy ? null : _verifySession,
-            icon: const Icon(Icons.verified_outlined, size: 16),
-            label: const Text('Verify'),
-          ),
+        ),
+        if (wide) ...[
           const SizedBox(width: 10),
-          Chip(
-            avatar: Icon(Icons.bolt,
-                size: 14, color: kDashboardScheme.secondary),
-            label: Text(_sessionLabel,
-                style: const TextStyle(fontSize: 12, color: Colors.white)),
-            backgroundColor: Colors.white.withValues(alpha: 0.13),
-            side: BorderSide.none,
-          ),
+          status,
         ],
-      ),
+      ],
+    );
+    if (wide) return controls;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        controls,
+        const SizedBox(height: 2),
+        status,
+      ],
     );
   }
 
@@ -1904,37 +1987,46 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Flexible(
-                flex: 2,
-                child: Text(
-                  'JPG · ≤8MB · ${(_portraitW * _portraitH / 1000000).toStringAsFixed(2)} MP',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  overflow: TextOverflow.ellipsis,
-                ),
+              // v56: the size spec is a pill now — the old Flexible
+              // text squeezed against the title on narrow phones.
+              // Short label on purpose: the full "4.67 MP" text
+              // squeezed the title to "Set …" at phone widths.
+              Chip(
+                label: const Text('JPG · ≤8MB',
+                    style: TextStyle(fontSize: 11, color: Colors.white)),
+                backgroundColor: Colors.white.withValues(alpha: 0.10),
+                side: BorderSide.none,
+                visualDensity: VisualDensity.compact,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          // Mode picker (v37 design, v38 labels): roomy squircle
-          // chips with a violet icon each, in the style of the
-          // user's reference image — but with OUR OWN mode names
-          // and order restored (v38, his correction: "amader
-          // kintu ei koyekta cilo"). The picked chip fills in and
-          // its icon swaps to a check.
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _modeChip(
-                  'dual_single', '9:16 + Foldable', Icons.devices_outlined),
-              _modeChip('single', 'Single 9:16', Icons.image_outlined),
-              _modeChip(
-                  'set_dual', 'Dual Set (2)', Icons.view_column_outlined),
-              _modeChip(
-                  'set_24h', '24-Hour Set (4)', Icons.schedule_outlined),
-              _modeChip('set_battery', 'Battery Set (6)',
-                  Icons.battery_charging_full),
-            ],
+          // Mode picker (v56 redesign): one horizontal swipe row
+          // of compact chips. The old Wrap stacked the five modes
+          // into three rows and pushed the prompt off-screen.
+          // Labels and order are OUR OWN (v38, his correction:
+          // "amader kintu ei koyekta cilo") — unchanged.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _modeChip(
+                    'dual_single', '9:16 + Foldable', Icons.devices_outlined),
+                const SizedBox(width: 8),
+                _modeChip('single', 'Single 9:16', Icons.image_outlined),
+                const SizedBox(width: 8),
+                _modeChip(
+                    'set_dual', 'Dual Set (2)', Icons.view_column_outlined),
+                const SizedBox(width: 8),
+                _modeChip(
+                    'set_24h', '24-Hour Set (4)', Icons.schedule_outlined),
+                const SizedBox(width: 8),
+                _modeChip('set_battery', 'Battery Set (6)',
+                    Icons.battery_charging_full),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -1975,6 +2067,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          // v56: Polish button on its own, helper line below it as
+          // a caption. The old side-by-side text squeezed into
+          // three wrapped lines; sharing the row with the Batch
+          // switch overflowed at 320px wide.
           Row(
             children: [
               OutlinedButton.icon(
@@ -1992,20 +2088,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   minimumSize: const Size(0, 34),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                    _listening
-                        ? 'Listening... tap the mic to stop'
-                        : 'AI rewrites your idea into a detailed pro prompt',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: _listening
-                            ? const Color(0xFFE5484D)
-                            : const Color(0xFF9A9AA5))),
-              ),
             ],
           ),
+          const SizedBox(height: 4),
+          Text(
+              _listening
+                  ? 'Listening... tap the mic to stop'
+                  : 'AI rewrites your idea into a detailed pro prompt',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: _listening
+                      ? const Color(0xFFE5484D)
+                      : const Color(0xFF9A9AA5))),
           const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerRight,
@@ -2046,18 +2140,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Text('Remove reference'),
               ),
             ),
-          if (_mode == 'dual_single' || _foldableCompanion) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _landscapePromptCtrl,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Foldable adaptation prompt',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
+          // v58: the foldable adaptation prompt is backend-only now
+          // (kFoldableAdaptationPrompt) — no field in the UI anymore.
           const SizedBox(height: 10),
           _tuningRow(),
           const SizedBox(height: 12),
@@ -2276,10 +2360,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _modeChip(String value, String label, IconData icon) {
     final selected = _mode == value;
     return ChoiceChip(
-      avatar: Icon(icon, size: 18, color: const Color(0xFFB9AFFF)),
-      label: Text(label, style: const TextStyle(fontSize: 13.5)),
+      avatar: Icon(icon, size: 17, color: const Color(0xFFB9AFFF)),
+      label: Text(label, style: const TextStyle(fontSize: 13)),
       labelPadding: const EdgeInsets.only(left: 2, right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14)),
       selected: selected,
@@ -2539,20 +2623,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  children: [
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        textStyle: const TextStyle(fontSize: 12.5),
-                      ),
-                      onPressed:
-                          _busy || _history.isEmpty ? null : _writeAllMetadata,
+              // v57: the three actions are hidden while the
+              // Showcase is empty — they were all disabled then,
+              // showing as three greyed-out buttons.
+              if (_history.isNotEmpty)
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          textStyle: const TextStyle(fontSize: 12.5),
+                        ),
+                        onPressed: _busy ? null : _writeAllMetadata,
                       icon: const Icon(Icons.description_outlined, size: 15),
                       label: const Text('Metadata (all)'),
                     ),
@@ -2588,10 +2675,46 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         Expanded(
           child: _history.isEmpty
-              ? const Center(
-                  child: Text(
-                      'No sets yet.\nSign in with Gemini, write a prompt and Generate.',
-                      textAlign: TextAlign.center),
+              // v56: a real empty state — icon, title, guidance and
+              // a way forward, instead of two lines floating in a
+              // huge blank area.
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 76,
+                          height: 76,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF37335F),
+                            borderRadius: BorderRadius.circular(22),
+                            border:
+                                Border.all(color: const Color(0xFF4A4480)),
+                          ),
+                          child: const Icon(Icons.grid_view_outlined,
+                              size: 34, color: Color(0xFFC9C2FF)),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('No sets yet',
+                            style: TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 6),
+                        const Text(
+                            'Sign in with Gemini, write a prompt and Generate.',
+                            textAlign: TextAlign.center,
+                            style:
+                                TextStyle(fontSize: 13, color: Colors.grey)),
+                        const SizedBox(height: 18),
+                        FilledButton.icon(
+                          onPressed: () => setState(() => _tab = 0),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Create your first set'),
+                        ),
+                      ],
+                    ),
+                  ),
                 )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 12),

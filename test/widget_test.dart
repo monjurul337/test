@@ -205,7 +205,10 @@ void main() {
           matching: find.text('Showcase')));
       await tester.pump(const Duration(milliseconds: 450));
       expect(tester.takeException(), isNull);
-      expect(find.text('Metadata (all)'), findsOneWidget);
+      // v57: an empty Showcase hides the (disabled) action row and
+      // shows the designed empty state instead.
+      expect(find.text('Metadata (all)'), findsNothing);
+      expect(find.text('Create your first set'), findsOneWidget);
     });
   }
 

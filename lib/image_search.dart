@@ -309,6 +309,30 @@ class SimilarityOptionsPanel extends StatelessWidget {
     );
   }
 
+  /// v60: the Stays / Will-change lists made the Similarity card
+  /// very tall, so they live in one collapsed preview now — the
+  /// counts stay visible on the header, the full lists are one
+  /// tap away. The chips themselves are display-only, so nothing
+  /// about the behaviour changes.
+  Widget _aspectsPreview(PromptOptions options) {
+    final stays = GeminiApi.staysForSimilarity(options.similarity);
+    final changes = GeminiApi.changesForSimilarity(options.similarity);
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      title: const Text('What stays & what changes',
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+      subtitle: Text('${stays.length} stay · ${changes.length} change',
+          style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      children: [
+        _aspectGroup(
+            'Stays the same', Icons.lock_outline, Colors.green, stays),
+        const SizedBox(height: 6),
+        _aspectGroup(
+            'Will change', Icons.shuffle, Colors.orange, changes),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -383,11 +407,7 @@ class SimilarityOptionsPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              _aspectGroup('Stays the same', Icons.lock_outline, Colors.green,
-                  GeminiApi.staysForSimilarity(options.similarity)),
-              const SizedBox(height: 6),
-              _aspectGroup('Will change', Icons.shuffle, Colors.orange,
-                  GeminiApi.changesForSimilarity(options.similarity)),
+              _aspectsPreview(options),
             ],
           ),
         ),
@@ -1316,6 +1336,16 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  // v59: the source group gets a caption, and the
+                  // source chips sit in one horizontal swipe row
+                  // (the old Wrap spilled into three ragged rows).
+                  const Text('SOURCE',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white54,
+                          letterSpacing: 1.2)),
+                  const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 11),
@@ -1326,7 +1356,7 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.search, size: 18, color: Colors.grey),
+                        const Icon(Icons.public, size: 18, color: Colors.grey),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1340,17 +1370,23 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _sourceChip(
-                          'pinterest', 'Pinterest', Icons.push_pin_outlined),
-                      _sourceChip('unsplash', 'Unsplash', Icons.photo_outlined),
-                      _sourceChip(
-                          'google', 'Google Images', Icons.image_search),
-                      _sourceChip('lexica', 'Lexica', Icons.auto_awesome_outlined),
-                    ],
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _sourceChip('pinterest', 'Pinterest',
+                            Icons.push_pin_outlined),
+                        const SizedBox(width: 8),
+                        _sourceChip(
+                            'unsplash', 'Unsplash', Icons.photo_outlined),
+                        const SizedBox(width: 8),
+                        _sourceChip(
+                            'google', 'Google Images', Icons.image_search),
+                        const SizedBox(width: 8),
+                        _sourceChip('lexica', 'Lexica',
+                            Icons.auto_awesome_outlined),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -1392,9 +1428,12 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
                     ),
                   ],
                   const SizedBox(height: 8),
+                  // v59: secondary action now — the old tonal button
+                  // was visually heavier than the primary Open
+                  // browser button above it.
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton.tonalIcon(
+                    child: OutlinedButton.icon(
                       onPressed:
                           _browserOpen && !_appBrowser ? null : _openBrowser,
                       icon: const Icon(Icons.link, size: 18),

@@ -135,8 +135,7 @@ class StudioEngine {
     bool aiDirectorEnabled = false,
     bool autoWriteMetadata = true,
     bool includeFoldableCompanion = false,
-    String landscapePrompt =
-        'make it landscape mode, re-frame the exact same artwork for a foldable screen without cropping the main subject',
+    String landscapePrompt = kFoldableAdaptationPrompt,
     Uint8List? referenceBytes,
     String referenceFilename = 'reference_image.jpg',
     String referenceMime = 'image/jpeg',
@@ -230,8 +229,7 @@ class StudioEngine {
     bool aiDirectorEnabled = false,
     bool autoWriteMetadata = true,
     bool includeFoldableCompanion = false,
-    String landscapePrompt =
-        'make it landscape mode, re-frame the exact same artwork for a foldable screen without cropping the main subject',
+    String landscapePrompt = kFoldableAdaptationPrompt,
     Uint8List? referenceBytes,
     String referenceFilename = 'reference_image.jpg',
     String referenceMime = 'image/jpeg',
@@ -696,7 +694,7 @@ class StudioEngine {
           stepNum: 3,
         );
         final baseFold = landscapePrompt.trim().isEmpty
-            ? 'make it landscape mode, re-frame the exact same artwork for foldable screen without cropping the main subject'
+            ? kFoldableAdaptationPrompt
             : landscapePrompt.trim();
         final img2imgPrompt =
             '$baseFold, keep the exact same subject, color palette, lighting and style$styleSuffix$negGuard';
