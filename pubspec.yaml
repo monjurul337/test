@@ -1,29 +1,27 @@
-name: gemini_hd_studio
-description: "Zedge Studio — Wallpaper Set Designer, AI Metadata & Panel Uploader (Android + Windows). Flutter port of the Gemini HD Studio v2.5.3 Chrome extension."
+name: mh_motion_studio
+description: MH Motion GPU Shader Studio with Anti-Detect Chromium, Gemini Cookie Metadata, and Adobe Stock Auto-Submit.
 publish_to: 'none'
-version: 2.5.9+74
+version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.4
+  sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  # No WebView plugin: sign-in + browsing use the built-in Firefox
-  # engine (Android, GeckoView) and the app's own Chrome/Edge
-  # window (Windows). flutter_inappwebview was removed in v17 —
-  # it was unused in lib/ and its old Android module risked
-  # breaking the AGP 8.9 / Kotlin 2.3 toolchain.
-  http: ^1.2.2
-  path: ^1.9.0
-  shared_preferences: ^2.3.2
-  path_provider: ^2.1.4
-  file_picker: ^8.1.2
-  image: ^4.2.0
-  archive: ^3.6.1
-  crypto: ^3.0.3
-  speech_to_text: ^7.4.0
+  flutter_inappwebview: ^6.1.5
+  dio: ^5.7.0
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
+  flutter_riverpod: ^2.6.1
+  shared_preferences: ^2.3.3
+  file_picker: ^8.1.4
+  path_provider: ^2.1.5
+  video_thumbnail: ^0.5.3
+  video_player: ^2.9.2
+  gal: ^2.3.0
+  permission_handler: ^11.3.1
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -32,5 +30,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/logo.png
