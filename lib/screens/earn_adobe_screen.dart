@@ -69,8 +69,8 @@ class _EarnAdobeScreenState extends State<EarnAdobeScreen> {
     var withdrawCount = 0;
     var earnSum = 0.0;
     var paidSum = 0.0;
-    final sales = <SoldProductItem>[];
-    final payouts = <PayoutHistoryItem>[];
+    final sales = <StockSaleItem>[];
+    final payouts = <StockPayoutItem>[];
     final chart = List<double>.filled(7, 0.0);
 
     for (final st in _statsByPlatform.values) {
@@ -417,7 +417,7 @@ class _EarnAdobeScreenState extends State<EarnAdobeScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Row(
                         children: [
-                          _thumbBox(s.thumb, iconBox, muted),
+                          _thumbBox(s.thumbUrl, iconBox, muted),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(

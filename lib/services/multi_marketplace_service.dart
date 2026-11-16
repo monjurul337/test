@@ -249,7 +249,7 @@ class MultiMarketplaceService {
           title: rt.slice(0, 48),
           info: 'Shutterstock',
           amount: rm[0].replace(/\s+/g, ''),
-          thumb: ''
+          thumbUrl: ''
         });
       }
     }
@@ -311,7 +311,7 @@ class MultiMarketplaceService {
           title: rt.slice(0, 48),
           info: 'Magnific',
           amount: rm[0].replace(/\s+/g, ''),
-          thumb: ''
+          thumbUrl: ''
         });
       }
     }
