@@ -25,11 +25,15 @@ class AntiDetectScripts {
   } catch (e) {}
 
   // 2. Spoof OS, Platform, Hardware & Client Hints (userAgentData)
-  Object.defineProperty(navigator, 'platform', { get: () => '${fp.navPlatform}' });
-  Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => ${fp.hardwareConcurrency} });
-  Object.defineProperty(navigator, 'deviceMemory', { get: () => ${fp.deviceMemory} });
-  Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-  Object.defineProperty(navigator, 'userAgentData', {
+  const safeDef = (obj, prop, getter) => {
+    try { Object.defineProperty(obj, prop, { get: getter, configurable: true }); } catch (_) {}
+  };
+  safeDef(navigator, 'platform', () => '${fp.navPlatform}');
+  safeDef(navigator, 'hardwareConcurrency', () => ${fp.hardwareConcurrency});
+  safeDef(navigator, 'deviceMemory', () => ${fp.deviceMemory});
+  safeDef(navigator, 'languages', () => ['en-US', 'en']);
+  try {
+    Object.defineProperty(navigator, 'userAgentData', {
     get: () => ({
       brands: [
         { brand: 'Chromium', version: '$chromeVer' },
@@ -45,8 +49,10 @@ class AntiDetectScripts {
         platform: '${fp.osType}',
         uaFullVersion: '$chromeVer.0.0.0'
       })
-    })
+    }),
+    configurable: true
   });
+  } catch (_) {}
 
   // 3. WebRTC IP Leak Protection (GoLogin-style Disabled/Masked)
   if (${blockWebRtc ? 'true' : 'false'}) {
@@ -121,19 +127,23 @@ class AntiDetectScripts {
         : origQ(p);
   }
 
-  // 8. Deterministic Canvas Fingerprint Noise
-  const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-  HTMLCanvasElement.prototype.toDataURL = function() {
-    try {
-      const ctx = this.getContext('2d');
-      if (ctx && this.width > 0 && this.height > 0) {
-        const img = ctx.getImageData(0, 0, 1, 1);
-        img.data[0] = (img.data[0] + (SEED % 5) + 1) & 255;
-        ctx.putImageData(img, 0, 0);
-      }
-    } catch (e) {}
-    return origToDataURL.apply(this, arguments);
-  };
+  // 8. Canvas Fingerprint Protection (${fp.canvasMode})
+  if ('${fp.canvasMode}' === 'Block') {
+    HTMLCanvasElement.prototype.toDataURL = function() { return 'data:,'; };
+  } else if ('${fp.canvasMode}' === 'Noise') {
+    const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function() {
+      try {
+        const ctx = this.getContext('2d');
+        if (ctx && this.width > 0 && this.height > 0) {
+          const img = ctx.getImageData(0, 0, 1, 1);
+          img.data[0] = (img.data[0] + (SEED % 5) + 1) & 255;
+          ctx.putImageData(img, 0, 0);
+        }
+      } catch (e) {}
+      return origToDataURL.apply(this, arguments);
+    };
+  }
 
   // 9. WebGL Vendor & Renderer Spoofing
   const spoofWebGL = (proto) => {
@@ -148,8 +158,8 @@ class AntiDetectScripts {
   if (window.WebGLRenderingContext) spoofWebGL(WebGLRenderingContext.prototype);
   if (window.WebGL2RenderingContext) spoofWebGL(WebGL2RenderingContext.prototype);
 
-  // 10. AudioContext Fingerprint Noise
-  if (window.AudioBuffer && AudioBuffer.prototype.getChannelData) {
+  // 10. AudioContext Fingerprint Noise (${fp.audioMode})
+  if ('${fp.audioMode}' === 'Noise' && window.AudioBuffer && AudioBuffer.prototype.getChannelData) {
     const origGetChannelData = AudioBuffer.prototype.getChannelData;
     AudioBuffer.prototype.getChannelData = function() {
       const data = origGetChannelData.apply(this, arguments);

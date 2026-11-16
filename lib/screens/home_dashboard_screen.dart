@@ -256,7 +256,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                 : AppColors.lightIconBox,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: isCur ? AppColors.primary : AppColors.border.withValues(alpha: 0.5),
+                              color: isCur ? AppColors.primary : AppColors.borderOf(context).withValues(alpha: 0.7),
                             ),
                           ),
                           child: Column(
@@ -285,7 +285,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                       style: TextStyle(
                                         fontSize: 9,
                                         fontWeight: FontWeight.w800,
-                                        color: isCur ? AppColors.success : AppColors.primaryLight,
+                                        color: isCur ? AppColors.success : AppColors.accentTextOf(context),
                                       ),
                                     ),
                                   ),
@@ -304,7 +304,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                 '${prof.lastIp} · ${prof.lastCountry}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+                                style: TextStyle(fontSize: 10, color: AppColors.mutedOf(context)),
                               ),
                             ],
                           ),
@@ -316,7 +316,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('All Accounts Total', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                      Text('All Accounts Total', style: TextStyle(fontSize: 12, color: AppColors.mutedOf(context))),
                       Text(
                         '\$${_profiles.fold<double>(0.0, (sum, p) => sum + (double.tryParse(p.lastEarnings.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0)).toStringAsFixed(2)}',
                         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.success),
@@ -380,7 +380,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             const SizedBox(height: 4),
             Text(val, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-            Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+            Text(label, style: TextStyle(fontSize: 10, color: AppColors.mutedOf(context))),
           ],
         ),
       );

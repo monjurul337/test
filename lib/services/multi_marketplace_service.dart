@@ -3,8 +3,7 @@ import '../models/studio_models.dart';
 
 enum StockMarketplace {
   adobeStock('Adobe Stock', 'https://contributor.stock.adobe.com/en/uploads'),
-  shutterstock('Shutterstock', 'https://submit.shutterstock.com/'),
-  pond5('Pond5', 'https://www.pond5.com/uploads'),
+  shutterstock('Shutterstock', 'https://submit.shutterstock.com/dashboard'),
   magnific('Magnific', 'https://contributor.magnific.com/');
 
   final String label;
@@ -171,9 +170,6 @@ class MultiMarketplaceService {
     if (market == StockMarketplace.magnific) {
       return buildMagnificApiUploadAndSubmitScript(meta, base64Video, fileName, autoSubmit: autoSubmit);
     }
-    if (market == StockMarketplace.pond5) {
-      return buildPond5ApiScript(meta, base64Video, fileName, autoSubmit: autoSubmit);
-    }
     // Shutterstock fallback DOM script until HAR is provided
     final title = jsonEncode(meta.title);
     final desc = jsonEncode('${meta.title}. Seamless high-resolution commercial motion background.');
@@ -216,5 +212,129 @@ class MultiMarketplaceService {
   }
 })();
 ''';
+  }
+
+  /// Zero-API live earnings & portfolio stats scraper for Shutterstock Contributor
+  static String buildShutterstockStatsScript() {
+    return r"""
+(async function() {
+  try {
+    if (location.href.includes('/login') || location.href.includes('accounts.shutterstock')) {
+      return JSON.stringify({ ok: false, reason: 'not_logged_in' });
+    }
+    const txt = (document.body && document.body.innerText) || '';
+    const moneyMatches = txt.match(/\$\s?[0-9,]+\.\d{2}/g) || [];
+    const earnings = moneyMatches.length ? moneyMatches[0].replace(/\s+/g, '') : '$0.00';
+    const totalWithdrawn = moneyMatches.length > 1 ? moneyMatches[moneyMatches.length - 1].replace(/\s+/g, '') : '$0.00';
+
+    let downloads = 0;
+    const dlM = txt.match(/(\d[\d,]*)\s*(?:downloads|sales)/i);
+    if (dlM) downloads = parseInt(dlM[1].replace(/,/g, ''), 10) || 0;
+
+    let totalFiles = 0;
+    const fM = txt.match(/(\d[\d,]*)\s*(?:approved|assets|files|items)/i);
+    if (fM) totalFiles = parseInt(fM[1].replace(/,/g, ''), 10) || 0;
+
+    let inReview = 0;
+    const rM = txt.match(/(\d[\d,]*)\s*(?:pending|in review)/i);
+    if (rM) inReview = parseInt(rM[1].replace(/,/g, ''), 10) || 0;
+
+    const recentSales = [];
+    const rows = document.querySelectorAll('table tbody tr, [class*="earning"] [class*="row"]');
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const rt = (rows[i].innerText || '').trim().replace(/\s+/g, ' ');
+      const rm = rt.match(/\$\s?[0-9,]+\.\d{2}/);
+      if (rm) {
+        recentSales.push({
+          title: rt.slice(0, 48),
+          info: 'Shutterstock',
+          amount: rm[0].replace(/\s+/g, ''),
+          thumb: ''
+        });
+      }
+    }
+
+    const chartPoints = moneyMatches.slice(0, 7).map(m => parseFloat(m.replace(/[^0-9.]/g, '')) || 0);
+    while (chartPoints.length < 7) chartPoints.unshift(0);
+
+    return JSON.stringify({
+      ok: true,
+      totalFiles,
+      inReview,
+      downloads,
+      earnings,
+      withdrawCount: 0,
+      totalWithdrawn,
+      recentSales,
+      payouts: [],
+      chartPoints
+    });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: String(e) });
+  }
+})();
+""";
+  }
+
+  /// Zero-API live earnings & portfolio stats scraper for Magnific Contributor
+  static String buildMagnificStatsScript() {
+    return r"""
+(async function() {
+  try {
+    if (location.href.includes('login') || location.href.includes('signin')) {
+      return JSON.stringify({ ok: false, reason: 'not_logged_in' });
+    }
+    const txt = (document.body && document.body.innerText) || '';
+    const moneyMatches = txt.match(/\$\s?[0-9,]+\.\d{2}/g) || [];
+    const earnings = moneyMatches.length ? moneyMatches[0].replace(/\s+/g, '') : '$0.00';
+    const totalWithdrawn = moneyMatches.length > 1 ? moneyMatches[moneyMatches.length - 1].replace(/\s+/g, '') : '$0.00';
+
+    let downloads = 0;
+    const dlM = txt.match(/(\d[\d,]*)\s*(?:downloads|sales|uses)/i);
+    if (dlM) downloads = parseInt(dlM[1].replace(/,/g, ''), 10) || 0;
+
+    let totalFiles = 0;
+    const fM = txt.match(/(\d[\d,]*)\s*(?:approved|published|assets|videos|items)/i);
+    if (fM) totalFiles = parseInt(fM[1].replace(/,/g, ''), 10) || 0;
+
+    let inReview = 0;
+    const rM = txt.match(/(\d[\d,]*)\s*(?:pending|review)/i);
+    if (rM) inReview = parseInt(rM[1].replace(/,/g, ''), 10) || 0;
+
+    const recentSales = [];
+    const cards = document.querySelectorAll('table tbody tr, [class*="payout"], [class*="earning"]');
+    for (let i = 0; i < Math.min(cards.length, 8); i++) {
+      const rt = (cards[i].innerText || '').trim().replace(/\s+/g, ' ');
+      const rm = rt.match(/\$\s?[0-9,]+\.\d{2}/);
+      if (rm && rt.length > 4) {
+        recentSales.push({
+          title: rt.slice(0, 48),
+          info: 'Magnific',
+          amount: rm[0].replace(/\s+/g, ''),
+          thumb: ''
+        });
+      }
+    }
+
+    const chartPoints = moneyMatches.slice(0, 7).map(m => parseFloat(m.replace(/[^0-9.]/g, '')) || 0);
+    while (chartPoints.length < 7) chartPoints.unshift(0);
+
+    return JSON.stringify({
+      ok: true,
+      totalFiles,
+      inReview,
+      downloads,
+      earnings,
+      withdrawCount: 0,
+      totalWithdrawn,
+      recentSales,
+      payouts: [],
+      chartPoints
+    });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: String(e) });
+  }
+})();
+""";
   }
 }

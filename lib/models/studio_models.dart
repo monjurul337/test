@@ -121,6 +121,8 @@ class FingerprintProfile {
   final int hardwareConcurrency;
   final int deviceMemory;
   final String timezone;
+  final String canvasMode; // Noise, Off, Block
+  final String audioMode;  // Noise, Off
 
   const FingerprintProfile({
     required this.seed,
@@ -132,7 +134,36 @@ class FingerprintProfile {
     required this.hardwareConcurrency,
     required this.deviceMemory,
     required this.timezone,
+    this.canvasMode = 'Noise',
+    this.audioMode = 'Noise',
   });
+
+  FingerprintProfile copyWith({
+    int? seed,
+    String? osType,
+    String? navPlatform,
+    String? userAgent,
+    String? webglVendor,
+    String? webglRenderer,
+    int? hardwareConcurrency,
+    int? deviceMemory,
+    String? timezone,
+    String? canvasMode,
+    String? audioMode,
+  }) =>
+      FingerprintProfile(
+        seed: seed ?? this.seed,
+        osType: osType ?? this.osType,
+        navPlatform: navPlatform ?? this.navPlatform,
+        userAgent: userAgent ?? this.userAgent,
+        webglVendor: webglVendor ?? this.webglVendor,
+        webglRenderer: webglRenderer ?? this.webglRenderer,
+        hardwareConcurrency: hardwareConcurrency ?? this.hardwareConcurrency,
+        deviceMemory: deviceMemory ?? this.deviceMemory,
+        timezone: timezone ?? this.timezone,
+        canvasMode: canvasMode ?? this.canvasMode,
+        audioMode: audioMode ?? this.audioMode,
+      );
 
   factory FingerprintProfile.defaultAndroid(int seed, {String osType = 'Android'}) {
     if (osType == 'Windows') {

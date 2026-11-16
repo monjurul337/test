@@ -15,6 +15,8 @@ class StudioScreen extends StatefulWidget {
   final ValueChanged<ServerInfo> onConnected;
   final void Function(File videoFile, String sceneName, String shaderCode) onSendToUploadPanel;
   final void Function(List<(File, String)> batch)? onSendBatchToUploadPanel;
+  final bool isFullScreen;
+  final ValueChanged<bool>? onFullScreenChanged;
 
   const StudioScreen({
     super.key,
@@ -24,6 +26,8 @@ class StudioScreen extends StatefulWidget {
     required this.onConnected,
     required this.onSendToUploadPanel,
     this.onSendBatchToUploadPanel,
+    this.isFullScreen = false,
+    this.onFullScreenChanged,
   });
 
   @override
@@ -56,10 +60,21 @@ class StudioScreenState extends State<StudioScreen> {
 ''';
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.initialTunnelUrl.isNotEmpty) {
+      _urlCtrl.text = widget.initialTunnelUrl;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openStudioUrl(widget.initialTunnelUrl);
+      });
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant StudioScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialTunnelUrl.isNotEmpty &&
-        widget.initialTunnelUrl != oldWidget.initialTunnelUrl) {
+        widget.initialTunnelUrl != _loadedUrl) {
       _urlCtrl.text = widget.initialTunnelUrl;
       _openStudioUrl(widget.initialTunnelUrl);
     }
@@ -175,11 +190,16 @@ class StudioScreenState extends State<StudioScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final hideChrome = widget.isFullScreen && _loadedUrl != null;
+
+    return Stack(
       children: [
-        // Top Tunnel URL Bar
-        Container(
-          color: AppColors.drawerBg,
+        Column(
+          children: [
+            if (!hideChrome)
+              // Top Tunnel URL Bar
+              Container(
+          color: AppColors.drawerOf(context),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: Row(
             children: [
@@ -205,19 +225,27 @@ class StudioScreenState extends State<StudioScreen> {
                 ),
                 child: const Text('Open', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
               ),
+              if (!hideChrome && _loadedUrl != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: 'Full Screen',
+                  onPressed: () => widget.onFullScreenChanged?.call(true),
+                  icon: const Icon(Icons.fullscreen_rounded, size: 22),
+                ),
+              ],
             ],
           ),
         ),
-        if (_statusMsg != null)
+        if (!hideChrome && _statusMsg != null)
           Container(
             width: double.infinity,
-            color: AppColors.activePill,
+            color: AppColors.activePillOf(context),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             child: Text(
               _statusMsg!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: AppColors.primaryLight),
+              style: TextStyle(fontSize: 11, color: AppColors.accentTextOf(context)),
             ),
           ),
         // Exact Colab MH Motion Studio Web Interface (panel.html)
@@ -239,7 +267,7 @@ class StudioScreenState extends State<StudioScreen> {
                         const Text(
                           'Once Colab prints the trycloudflare.com link, the exact MH Motion Studio interface will load right here.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                          style: TextStyle(fontSize: 12, color: AppColors.mutedOf(context)),
                         ),
                       ],
                     ),
@@ -266,14 +294,14 @@ class StudioScreenState extends State<StudioScreen> {
                     ),]),
                   onWebViewCreated: (c) => _webCtrl = c,
                   onLoadStop: (c, url) async {
-                    await c.evaluateJavascript(source: _mobileFitPanelCss);
+                    // v5.6 panel.html has native mobile responsive UI
                   },
                 ),
         ),
         // Quick Action Bar to Download or Send Rendered MP4 to Upload Panel
-        if (_loadedUrl != null)
+        if (!hideChrome && _loadedUrl != null)
           Container(
-            color: AppColors.drawerBg,
+            color: AppColors.drawerOf(context),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
@@ -309,6 +337,40 @@ class StudioScreenState extends State<StudioScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          ],
+        ),
+        if (hideChrome)
+          Positioned(
+            right: 12,
+            bottom: 16,
+            child: SafeArea(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                      icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.white),
+                      onPressed: () => _webCtrl?.reload(),
+                    ),
+                    IconButton(
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                      icon: const Icon(Icons.fullscreen_exit_rounded, size: 18, color: AppColors.primaryLight),
+                      onPressed: () => widget.onFullScreenChanged?.call(false),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
       ],

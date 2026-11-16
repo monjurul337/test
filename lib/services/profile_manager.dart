@@ -10,6 +10,13 @@ class AccountProfile {
   final String name;
   final int seed;
   final String osType;
+  final String platform;
+  final String? customUserAgent;
+  final String? customWebglVendor;
+  final String? customWebglRenderer;
+  final String canvasMode;
+  final String audioMode;
+  final String? timezone;
   final String? wgConfName;
   final String? wgConfContent;
   final String? proxyUrl;
@@ -23,10 +30,17 @@ class AccountProfile {
     required this.name,
     required this.seed,
     this.osType = 'Android',
+    this.platform = 'All',
+    this.customUserAgent,
+    this.customWebglVendor,
+    this.customWebglRenderer,
+    this.canvasMode = 'Noise',
+    this.audioMode = 'Noise',
+    this.timezone,
     this.wgConfName,
     this.wgConfContent,
     this.proxyUrl,
-    this.lastEarnings = r'\$0.00',
+    this.lastEarnings = r'$0.00',
     this.lastDownloads = 0,
     this.lastIp = 'Checking...',
     this.lastCountry = 'Unknown',
@@ -37,6 +51,13 @@ class AccountProfile {
         'name': name,
         'seed': seed,
         'osType': osType,
+        'platform': platform,
+        'customUserAgent': customUserAgent,
+        'customWebglVendor': customWebglVendor,
+        'customWebglRenderer': customWebglRenderer,
+        'canvasMode': canvasMode,
+        'audioMode': audioMode,
+        'timezone': timezone,
         'wgConfName': wgConfName,
         'wgConfContent': wgConfContent,
         'proxyUrl': proxyUrl,
@@ -51,10 +72,17 @@ class AccountProfile {
         name: (j['name'] ?? 'Profile 1').toString(),
         seed: (j['seed'] as num?)?.toInt() ?? 100001,
         osType: (j['osType'] ?? 'Android').toString(),
+        platform: (j['platform'] ?? 'All').toString(),
+        customUserAgent: j['customUserAgent']?.toString(),
+        customWebglVendor: j['customWebglVendor']?.toString(),
+        customWebglRenderer: j['customWebglRenderer']?.toString(),
+        canvasMode: (j['canvasMode'] ?? 'Noise').toString(),
+        audioMode: (j['audioMode'] ?? 'Noise').toString(),
+        timezone: j['timezone']?.toString(),
         wgConfName: j['wgConfName']?.toString(),
         wgConfContent: j['wgConfContent']?.toString(),
         proxyUrl: j['proxyUrl']?.toString(),
-        lastEarnings: (j['lastEarnings'] ?? r'\$0.00').toString(),
+        lastEarnings: (j['lastEarnings'] ?? r'$0.00').toString(),
         lastDownloads: (j['lastDownloads'] as num?)?.toInt() ?? 0,
         lastIp: (j['lastIp'] ?? 'Checking...').toString(),
         lastCountry: (j['lastCountry'] ?? 'Unknown').toString(),

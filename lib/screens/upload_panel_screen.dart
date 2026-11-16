@@ -355,7 +355,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   children: [
                     _statPill('Total Files', '${_stats.totalFiles}', AppColors.success),
                     const SizedBox(width: 6),
-                    _statPill('In Review', '${_stats.inReview}', AppColors.primaryLight),
+                    _statPill('In Review', '${_stats.inReview}', AppColors.accentTextOf(context)),
                     const SizedBox(width: 6),
                     _statPill('Sales/DL', '${_stats.downloads}', AppColors.primary),
                   ],
@@ -365,7 +365,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   children: [
                     _statPill('Balance', _stats.earnings, AppColors.success),
                     const SizedBox(width: 6),
-                    _statPill('Withdraws', '${_stats.withdrawCount}x', AppColors.primaryLight),
+                    _statPill('Withdraws', '${_stats.withdrawCount}x', AppColors.accentTextOf(context)),
                     const SizedBox(width: 6),
                     _statPill('Total Paid', _stats.totalWithdrawn, AppColors.success),
                   ],
@@ -383,25 +383,25 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                       if (_stats.recentSales.isNotEmpty)
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Recent Product Sales', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                          child: Text('Recent Product Sales', style: TextStyle(fontSize: 11, color: AppColors.mutedOf(context))),
                         ),
                       ..._stats.recentSales.map((s) => ListTile(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
                             title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
-                            subtitle: s.info.isNotEmpty ? Text(s.info, style: const TextStyle(fontSize: 10, color: AppColors.textMuted)) : null,
+                            subtitle: s.info.isNotEmpty ? Text(s.info, style: TextStyle(fontSize: 10, color: AppColors.mutedOf(context))) : null,
                             trailing: Text(s.amount, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.success)),
                           )),
                       if (_stats.payouts.isNotEmpty)
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Withdrawals / Payouts', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                          child: Text('Withdrawals / Payouts', style: TextStyle(fontSize: 11, color: AppColors.mutedOf(context))),
                         ),
                       ..._stats.payouts.map((p) => ListTile(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
                             title: Text('${p.date} · ${p.status}', style: const TextStyle(fontSize: 12)),
-                            trailing: Text(p.amount, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primaryLight)),
+                            trailing: Text(p.amount, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentTextOf(context))),
                           )),
                     ],
                   ),
@@ -456,7 +456,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                         return ChoiceChip(
                           label: Text('${q.sceneName} (${q.status})', style: const TextStyle(fontSize: 11)),
                           selected: sel,
-                          selectedColor: AppColors.activePill,
+                          selectedColor: AppColors.activePillOf(context),
                           onSelected: (_) {
                             setState(() => _selectedIdx = i);
                             _initPlayerFor(q);
@@ -467,7 +467,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   ),
                 ],
                 const SizedBox(height: 6),
-                Text(_status, style: const TextStyle(fontSize: 11, color: AppColors.primaryLight)),
+                Text(_status, style: TextStyle(fontSize: 11, color: AppColors.accentTextOf(context))),
               ],
             ),
           ),
@@ -516,7 +516,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                     children: [
                       Text(
                         '${_playerCtrl!.value.size.width.toInt()}x${_playerCtrl!.value.size.height.toInt()} · ${_playerCtrl!.value.duration.inSeconds}s',
-                        style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                        style: TextStyle(fontSize: 12, color: AppColors.mutedOf(context)),
                       ),
                       Text(
                         preflight.allPassed ? 'Stock Ready' : 'Check Pre-Flight',
@@ -580,7 +580,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _category,
-                  dropdownColor: AppColors.cardBg,
+                  dropdownColor: AppColors.cardOf(context),
                   decoration: const InputDecoration(labelText: 'Category'),
                   items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                   onChanged: (v) => setState(() => _category = v ?? 'Abstract'),
@@ -603,7 +603,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   children: _tags
                       .map((t) => Chip(
                             label: Text(t, style: const TextStyle(fontSize: 11)),
-                            backgroundColor: AppColors.iconBoxBg,
+                            backgroundColor: AppColors.iconBoxOf(context),
                             deleteIcon: const Icon(Icons.close, size: 14),
                             onDeleted: () => setState(() => _tags.remove(t)),
                           ))
@@ -639,14 +639,14 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Created using Generative AI', style: TextStyle(fontSize: 13)),
                   value: _isAiGenerated,
-                  activeThumbColor: AppColors.primary,
+                  activeColor: AppColors.primary,
                   onChanged: (v) => setState(() => _isAiGenerated = v),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('No Recognizable People / Property', style: TextStyle(fontSize: 13)),
                   value: _noPropertyRelease,
-                  activeThumbColor: AppColors.primary,
+                  activeColor: AppColors.primary,
                   onChanged: (v) => setState(() => _noPropertyRelease = v),
                 ),
                 const SizedBox(height: 10),
@@ -660,7 +660,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                     return FilterChip(
                       label: Text(m.label, style: const TextStyle(fontSize: 11)),
                       selected: sel,
-                      selectedColor: AppColors.activePill,
+                      selectedColor: AppColors.activePillOf(context),
                       onSelected: (v) {
                         setState(() {
                           if (v) _selectedMarkets.add(m);
@@ -705,7 +705,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                 title: const Text('Adobe Stock Contributor Panel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                 trailing: Switch(
                   value: _showStockWebView,
-                  activeThumbColor: AppColors.primary,
+                  activeColor: AppColors.primary,
                   onChanged: (v) => setState(() => _showStockWebView = v),
                 ),
               ),
@@ -759,9 +759,9 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
           decoration: BoxDecoration(
-            color: AppColors.iconBoxBg,
+            color: AppColors.iconBoxOf(context),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: AppColors.borderOf(context)),
           ),
           child: Column(
             children: [
@@ -769,7 +769,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
               const SizedBox(height: 2),
               Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                  style: TextStyle(fontSize: 10, color: AppColors.mutedOf(context))),
             ],
           ),
         ),
