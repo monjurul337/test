@@ -1,0 +1,66 @@
+name: Build MH Motion Studio (Android Release APK)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Android Release APK (JDK 17)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-35
+            platforms;android-36
+            build-tools;35.0.0
+
+      - name: Setup Flutter 3.35.x
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.x'
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze (warnings only, build continues)
+        run: flutter analyze || true
+
+      - name: Build release APK
+        run: flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk MHMotionStudio-release.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mh-motion-studio-android-apk
+          path: MHMotionStudio-release.apk
+          retention-days: 90
+
+      - name: Publish APK to Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MHMotionStudio-release.apk
