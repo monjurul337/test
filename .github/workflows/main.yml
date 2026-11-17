@@ -1,0 +1,408 @@
+name: Waydroid Root in Browser (Full Fixed + Fast Cache + GAPPS + ARM64 + Reqable + Auto-CA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_duration:
+        description: 'Keep session alive (in minutes, max 350)'
+        required: true
+        default: '180'
+      android_type:
+        description: 'Android Image Type (GAPPS or VANILLA)'
+        required: true
+        default: 'GAPPS'
+
+jobs:
+  run-waydroid:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Install Dependencies & Setup Binder Kernel Module
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            curl wget git jq aria2 unzip lsb-release ca-certificates gnupg \
+            software-properties-common build-essential linux-headers-$(uname -r) openssl \
+            python3-venv python3-pip lzip \
+            xfce4 xfce4-terminal dbus-x11 \
+            weston xwayland mesa-utils libgl1-mesa-dri iptables dnsmasq pulseaudio \
+            tigervnc-standalone-server tigervnc-common \
+            novnc websockify python3-numpy net-tools
+
+          if [ ! -e /dev/binder ] && [ ! -e /dev/binderfs/binder ]; then
+            if ! sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" 2>/dev/null; then
+              KVER=$(uname -r | cut -d'-' -f1 | cut -d'.' -f1,2)
+              git clone --depth=1 https://github.com/torvalds/linux.git -b "v${KVER}" /tmp/linux-src || \
+              git clone --depth=1 https://github.com/torvalds/linux.git /tmp/linux-src
+
+              cd /tmp/linux-src/drivers/android
+              printf "obj-m += binder_linux.o\nbinder_linux-y := binder.o binder_alloc.o\nccflags-y += -DCONFIG_ANDROID_BINDERFS -DCONFIG_ANDROID_BINDER_IPC\n" > Makefile
+              make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
+              sudo insmod binder_linux.ko devices="binder,hwbinder,vndbinder"
+            fi
+          fi
+
+          if [ ! -e /dev/binder ]; then
+            sudo mkdir -p /dev/binderfs
+            mountpoint -q /dev/binderfs || sudo mount -t binder binder /dev/binderfs || true
+            sudo ln -sf /dev/binderfs/binder /dev/binder 2>/dev/null || true
+            sudo ln -sf /dev/binderfs/hwbinder /dev/hwbinder 2>/dev/null || true
+            sudo ln -sf /dev/binderfs/vndbinder /dev/vndbinder 2>/dev/null || true
+          fi
+
+          sudo chmod 755 /dev/binderfs 2>/dev/null || true
+          sudo chmod 666 /dev/binderfs/* /dev/binder /dev/hwbinder /dev/vndbinder 2>/dev/null || true
+
+      - name: Fix Host Networking & Docker Firewall for Waydroid Internet
+        run: |
+          OUT_IF=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo iptables -P FORWARD ACCEPT
+          sudo iptables -C FORWARD -i waydroid0 -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i waydroid0 -j ACCEPT
+          sudo iptables -C FORWARD -o waydroid0 -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -o waydroid0 -j ACCEPT
+          sudo iptables -t nat -C POSTROUTING -s 192.168.240.0/24 -o "$OUT_IF" -j MASQUERADE 2>/dev/null || \
+          sudo iptables -t nat -A POSTROUTING -s 192.168.240.0/24 -o "$OUT_IF" -j MASQUERADE
+
+      - name: Restore Waydroid & libhoudini Cache
+        id: cache-waydroid
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/waydroid-cache
+          key: waydroid-fast-${{ github.event.inputs.android_type }}-v9
+
+      - name: Download Latest Reqable Android x86_64 APK
+        run: |
+          mkdir -p /tmp/apks
+          REL_JSON=$(curl -sL "https://api.github.com/repos/reqable/reqable-app/releases/latest")
+          APK_URL=$(echo "$REL_JSON" | jq -r '.assets[]? | select(.name | test("android.*(x86_64|universal).*\\.apk$"; "i")) | .browser_download_url' | head -n 1)
+          [ -z "$APK_URL" ] && APK_URL=$(echo "$REL_JSON" | jq -r '.assets[]? | select(.name | test("android.*\\.apk$"; "i")) | .browser_download_url' | head -n 1)
+
+          if [ -z "$APK_URL" ]; then
+            REL_HTML=$(curl -sL "https://github.com/reqable/reqable-app/releases")
+            REL_PATH=$(echo "$REL_HTML" | grep -oE '/reqable/reqable-app/releases/download/[^"'\'' ]+android[^"'\'' ]*(x86_64|universal)[^"'\'' ]*\.apk' | head -n 1)
+            [ -z "$REL_PATH" ] && REL_PATH=$(echo "$REL_HTML" | grep -oE '/reqable/reqable-app/releases/download/[^"'\'' ]+\.apk' | head -n 1)
+            [ -n "$REL_PATH" ] && APK_URL="https://github.com${REL_PATH}"
+          fi
+
+          if [ -z "$APK_URL" ]; then
+            PAGE_HTML=$(curl -sL "https://reqable.com/en-US/download/")
+            APK_URL=$(echo "$PAGE_HTML" | grep -oE 'https://[^"'\'' ]+android[^"'\'' ]*(x86_64|universal)[^"'\'' ]*\.apk' | head -n 1)
+            [ -z "$APK_URL" ] && APK_URL=$(echo "$PAGE_HTML" | grep -oE 'https://[^"'\'' ]+\.apk' | head -n 1)
+          fi
+
+          if [ -n "$APK_URL" ]; then
+            aria2c -U "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" -x 16 -s 16 --console-log-level=warn -d /tmp/apks -o reqable.apk "$APK_URL" || \
+            curl -sL "$APK_URL" -o /tmp/apks/reqable.apk
+          fi
+
+      - name: Ultra-Fast Waydroid Setup (Direct Mirror 16x aria2c + ARM64 libhoudini)
+        run: |
+          curl -s https://repo.waydro.id | sudo bash
+          sudo apt-get install -y -qq waydroid
+          mkdir -p /tmp/waydroid-cache
+          sudo mkdir -p /usr/share/waydroid-extra/images /var/lib/waydroid/images
+
+          if [ -f /tmp/waydroid-cache/system.img ] && [ -f /tmp/waydroid-cache/vendor.img ]; then
+            echo "Restoring pre-built Waydroid + libhoudini images from cache..."
+            sudo cp /tmp/waydroid-cache/system.img /usr/share/waydroid-extra/images/
+            sudo cp /tmp/waydroid-cache/vendor.img /usr/share/waydroid-extra/images/
+            sudo waydroid init -s ${{ github.event.inputs.android_type }} -f
+            [ -f /tmp/waydroid-cache/overlay.tar.gz ] && sudo tar -xzf /tmp/waydroid-cache/overlay.tar.gz -C /var/lib/waydroid
+          else
+            echo "Converting SourceForge OTA links to direct CDN mirror URLs..."
+            SYS_JSON=$(curl -sL "https://ota.waydro.id/system/lineage/waydroid_x86_64/${{ github.event.inputs.android_type }}.json")
+            VEN_JSON=$(curl -sL "https://ota.waydro.id/vendor/waydroid_x86_64/MAINLINE.json")
+
+            RAW_SYS=$(echo "$SYS_JSON" | jq -r '.response[0].url')
+            RAW_VEN=$(echo "$VEN_JSON" | jq -r '.response[0].url')
+
+            SYS_URL=$(echo "$RAW_SYS" | sed -E 's|https://sourceforge.net/projects/waydroid/files/(.*)/download|https://master.dl.sourceforge.net/project/waydroid/\1?viasf=1|')
+            VEN_URL=$(echo "$RAW_VEN" | sed -E 's|https://sourceforge.net/projects/waydroid/files/(.*)/download|https://master.dl.sourceforge.net/project/waydroid/\1?viasf=1|')
+
+            if aria2c --max-tries=3 -x 16 -s 16 -k 1M --console-log-level=warn -d /tmp -o system.zip "$SYS_URL" && \
+               aria2c --max-tries=3 -x 16 -s 16 -k 1M --console-log-level=warn -d /tmp -o vendor.zip "$VEN_URL"; then
+              sudo unzip -q -o /tmp/system.zip -d /usr/share/waydroid-extra/images/
+              sudo unzip -q -o /tmp/vendor.zip -d /usr/share/waydroid-extra/images/
+              rm -f /tmp/system.zip /tmp/vendor.zip
+            else
+              rm -f /tmp/system.zip /tmp/vendor.zip
+            fi
+
+            sudo waydroid init -s ${{ github.event.inputs.android_type }} -f
+
+            git clone --depth=1 https://github.com/casualsnek/waydroid_script /tmp/waydroid_script
+            python3 -m venv /tmp/waydroid_script/venv
+            /tmp/waydroid_script/venv/bin/pip install -q -r /tmp/waydroid_script/requirements.txt
+            sudo /tmp/waydroid_script/venv/bin/python3 /tmp/waydroid_script/main.py install libhoudini
+
+            if [ -f /usr/share/waydroid-extra/images/system.img ]; then
+              sudo cp /usr/share/waydroid-extra/images/system.img /tmp/waydroid-cache/
+              sudo cp /usr/share/waydroid-extra/images/vendor.img /tmp/waydroid-cache/
+            elif [ -f /var/lib/waydroid/images/system.img ]; then
+              sudo cp /var/lib/waydroid/images/system.img /tmp/waydroid-cache/
+              sudo cp /var/lib/waydroid/images/vendor.img /tmp/waydroid-cache/
+            fi
+            sudo tar -czf /tmp/waydroid-cache/overlay.tar.gz -C /var/lib/waydroid overlay 2>/dev/null || true
+            sudo chown -R $USER:$USER /tmp/waydroid-cache || true
+          fi
+
+          # Persist CPU rendering + ARM64/ARM32 libhoudini native bridge properties
+          sudo sed -i '/ro.hardware.gralloc/d;/ro.hardware.egl/d;/persist.waydroid.udev/d;/native.bridge/d;/cpu.abilist/d' /var/lib/waydroid/waydroid.cfg
+
+          cat << 'EOF' | sudo tee -a /var/lib/waydroid/waydroid.cfg > /dev/null
+          ro.hardware.gralloc=default
+          ro.hardware.egl=swiftshader
+          persist.waydroid.udev=false
+          ro.product.cpu.abilist=x86_64,x86,arm64-v8a,armeabi-v7a,armeabi
+          ro.product.cpu.abilist32=x86,armeabi-v7a,armeabi
+          ro.product.cpu.abilist64=x86_64,arm64-v8a
+          ro.dalvik.vm.native.bridge=libhoudini.so
+          EOF
+
+          sudo sed -i 's/lxc.apparmor.profile.*/lxc.apparmor.profile = unconfined/g' /var/lib/waydroid/lxc/waydroid/config 2>/dev/null || true
+          sudo waydroid upgrade -o
+
+      - name: Setup Auto-CA Installer & Certificate Export Web Server
+        run: |
+          mkdir -p ~/exported-certs ~/Desktop ~/.vnc ~/.config
+          sudo chown -R $USER:$USER ~/.vnc ~/.config ~/Desktop ~/exported-certs
+          touch ~/.Xauthority
+          echo "waydroid123" | vncpasswd -f > ~/.vnc/passwd
+          chmod 600 ~/.vnc/passwd
+
+          cat << 'EOF' > ~/Desktop/install-cert-to-system.sh
+          #!/bin/bash
+          EXPORT_DIR="$HOME/exported-certs"
+          USER_DL="$HOME/.local/share/waydroid/data/media/0/Download"
+          SYS_DL="/var/lib/waydroid/data/media/0/Download"
+          mkdir -p "$EXPORT_DIR"
+          sudo mkdir -p /var/lib/waydroid/overlay/system/etc/security/cacerts
+
+          sync_conscrypt() {
+            if sudo waydroid shell getprop sys.boot_completed 2>/dev/null | grep -q "1"; then
+              sudo waydroid shell sh -c '
+                umount /apex/com.android.conscrypt/cacerts 2>/dev/null || true
+                mkdir -p /tmp/cacerts_tmp
+                cp /apex/com.android.conscrypt/cacerts/* /tmp/cacerts_tmp/ 2>/dev/null || true
+                cp /system/etc/security/cacerts/*.0 /tmp/cacerts_tmp/ 2>/dev/null || true
+                chown -R root:root /tmp/cacerts_tmp
+                chmod 644 /tmp/cacerts_tmp/*
+                mount --bind /tmp/cacerts_tmp /apex/com.android.conscrypt/cacerts
+                am force-stop com.reqable.android 2>/dev/null || true
+              '
+            fi
+          }
+
+          process_file() {
+            FILE="$1"
+            sudo test -f "$FILE" || return
+            BASENAME=$(basename "$FILE")
+            sudo cp "$FILE" "$EXPORT_DIR/$BASENAME"
+            sudo chown $USER:$USER "$EXPORT_DIR/$BASENAME"
+            LOCAL_FILE="$EXPORT_DIR/$BASENAME"
+
+            if [[ "$BASENAME" == *.0 || "$BASENAME" == *.crt || "$BASENAME" == *.pem || "$BASENAME" == *.cer ]]; then
+              openssl x509 -inform PEM -in "$LOCAL_FILE" -out /tmp/current_ca.pem 2>/dev/null || \
+              openssl x509 -inform DER -in "$LOCAL_FILE" -out /tmp/current_ca.pem 2>/dev/null || return
+
+              HASH=$(openssl x509 -inform PEM -subject_hash_old -in /tmp/current_ca.pem | head -1)
+              if [ -n "$HASH" ]; then
+                sudo cp /tmp/current_ca.pem "/var/lib/waydroid/overlay/system/etc/security/cacerts/${HASH}.0"
+                sudo cp /tmp/current_ca.pem "$EXPORT_DIR/${HASH}.0"
+                sudo chown -R root:root /var/lib/waydroid/overlay/system/etc/security/cacerts
+                sudo chmod 644 "/var/lib/waydroid/overlay/system/etc/security/cacerts/${HASH}.0"
+                sudo chown $USER:$USER "$EXPORT_DIR/${HASH}.0"
+                sync_conscrypt
+                echo "[$(date)] Installed System CA: ${HASH}.0 from $BASENAME" >> /tmp/ca-auto.log
+              fi
+            fi
+          }
+
+          while true; do
+            for DL_DIR in "$USER_DL" "$SYS_DL"; do
+              if sudo test -d "$DL_DIR"; then
+                sudo find "$DL_DIR" -maxdepth 4 -type f \( -name "*.0" -o -name "*.crt" -o -name "*.pem" -o -name "*.cer" -o -name "*.p12" \) 2>/dev/null | while read -r f; do
+                  BASENAME=$(basename "$f")
+                  if [ ! -f "$EXPORT_DIR/$BASENAME" ]; then
+                    process_file "$f"
+                  fi
+                done
+              fi
+            done
+            sleep 3
+          done
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/Desktop/install-cert-to-system.sh
+          chmod +x ~/Desktop/install-cert-to-system.sh
+
+          nohup ~/Desktop/install-cert-to-system.sh > /tmp/ca-watcher.log 2>&1 &
+
+          cat << 'EOF' > ~/exported-certs/README.txt
+          Exported Android Certificates & Files Server
+          1. Open the pre-installed Reqable app in Android.
+          2. Go to Certificate Management -> Export CA Public Certificate (.crt), Export (.p12), or Install CA Certificate to Local-Machine (.0).
+          3. Refresh this page within 3 seconds to download the exported certificate and Android System <hash>.0 file!
+          4. The certificate is also automatically installed as a System Trusted Credential in Waydroid.
+          EOF
+          nohup python3 -m http.server 8090 --directory ~/exported-certs > /tmp/cert-server.log 2>&1 &
+
+      - name: Configure Separate Android-Only Display (:2) & Full Linux Display (:1)
+        run: |
+          cat << 'EOF' > ~/.config/weston.ini
+          [core]
+          idle-time=0
+
+          [shell]
+          panel-position=none
+          locking=false
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/.config/weston.ini
+
+          cat << 'EOF' > ~/Desktop/start-android-only.sh
+          #!/bin/bash
+          export DISPLAY=:2
+          export XDG_RUNTIME_DIR=/tmp/runtime-android
+          export LIBGL_ALWAYS_SOFTWARE=1
+          mkdir -p "$XDG_RUNTIME_DIR/pulse"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          touch "$XDG_RUNTIME_DIR/pulse/native"
+          sudo chmod 755 /dev/binderfs 2>/dev/null || true
+          sudo chmod 666 /dev/binderfs/* /dev/binder /dev/hwbinder /dev/vndbinder 2>/dev/null || true
+
+          OUT_IF=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+          sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null
+          sudo iptables -P FORWARD ACCEPT
+          sudo iptables -C FORWARD -i waydroid0 -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i waydroid0 -j ACCEPT
+          sudo iptables -C FORWARD -o waydroid0 -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -o waydroid0 -j ACCEPT
+          sudo iptables -t nat -C POSTROUTING -s 192.168.240.0/24 -o "$OUT_IF" -j MASQUERADE 2>/dev/null || \
+          sudo iptables -t nat -A POSTROUTING -s 192.168.240.0/24 -o "$OUT_IF" -j MASQUERADE
+
+          pkill -f weston || true
+          rm -f "$XDG_RUNTIME_DIR"/wayland-*
+          sudo systemctl restart waydroid-container
+          sleep 2
+
+          (
+            for i in {1..30}; do
+              SOCK=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -n 1)
+              [ -n "$SOCK" ] && break
+              sleep 1
+            done
+
+            export WAYLAND_DISPLAY=$(basename "$SOCK")
+            waydroid show-full-ui > /tmp/waydroid-ui.log 2>&1 &
+
+            for i in {1..60}; do
+              if sudo waydroid shell getprop sys.boot_completed 2>/dev/null | grep -q "1"; then
+                sudo waydroid shell settings put global captive_portal_mode 0
+                sudo waydroid shell sh -c 'ip route add default via 192.168.240.1 dev eth0 2>/dev/null || true; ndc resolver setnetdns eth0 "" 8.8.8.8 1.1.1.1 2>/dev/null || true'
+                if [ -f /tmp/apks/reqable.apk ]; then
+                  waydroid app install /tmp/apks/reqable.apk >> /tmp/waydroid-ui.log 2>&1 || true
+                fi
+                sudo waydroid shell sh -c '
+                  mkdir -p /tmp/cacerts_tmp
+                  cp /apex/com.android.conscrypt/cacerts/* /tmp/cacerts_tmp/ 2>/dev/null || true
+                  cp /system/etc/security/cacerts/*.0 /tmp/cacerts_tmp/ 2>/dev/null || true
+                  chown -R root:root /tmp/cacerts_tmp
+                  chmod 644 /tmp/cacerts_tmp/*
+                  mount --bind /tmp/cacerts_tmp /apex/com.android.conscrypt/cacerts
+                '
+                break
+              fi
+              sleep 2
+            done
+          ) &
+
+          weston --backend=x11-backend.so --width=1280 --height=720 > /tmp/weston.log 2>&1
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/Desktop/start-android-only.sh
+          chmod +x ~/Desktop/start-android-only.sh
+
+          cat << 'EOF' > ~/.vnc/xstartup
+          #!/bin/bash
+          unset SESSION_MANAGER
+          unset DBUS_SESSION_BUS_ADDRESS
+          export XDG_RUNTIME_DIR=/tmp/runtime-linux
+          export LIBGL_ALWAYS_SOFTWARE=1
+          mkdir -p "$XDG_RUNTIME_DIR/pulse"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          touch "$XDG_RUNTIME_DIR/pulse/native"
+          exec dbus-launch --exit-with-session startxfce4
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/.vnc/xstartup
+          chmod +x ~/.vnc/xstartup
+
+          cat << 'EOF' > ~/.vnc/xstartup-android
+          #!/bin/bash
+          unset SESSION_MANAGER
+          unset DBUS_SESSION_BUS_ADDRESS
+          export XDG_RUNTIME_DIR=/tmp/runtime-android
+          export LIBGL_ALWAYS_SOFTWARE=1
+          mkdir -p "$XDG_RUNTIME_DIR/pulse"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          touch "$XDG_RUNTIME_DIR/pulse/native"
+          xfwm4 --compositor=off &
+          sleep 1
+          while true; do
+            ~/Desktop/start-android-only.sh
+            sleep 2
+          done
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/.vnc/xstartup-android
+          chmod +x ~/.vnc/xstartup-android
+
+      - name: Start Waydroid Container, Dual VNC (:1 Linux & :2 Android) & noVNC
+        run: |
+          sudo systemctl enable --now waydroid-container
+          sudo chown -R $USER:$USER ~/.vnc
+          rm -f ~/.vnc/*.log ~/.vnc/*.pid
+
+          vncserver :1 -geometry 1366x768 -depth 24 -localhost no -xstartup ~/.vnc/xstartup
+          nohup websockify --web=/usr/share/novnc/ 6080 localhost:5901 > /tmp/novnc-linux.log 2>&1 &
+
+          vncserver :2 -geometry 1280x720 -depth 24 -localhost no -xstartup ~/.vnc/xstartup-android
+          nohup websockify --web=/usr/share/novnc/ 6081 localhost:5902 > /tmp/novnc-android.log 2>&1 &
+
+          sleep 5
+
+      - name: Start 3 Cloudflare Tunnels (Android-Only + Full Linux + Cert Export)
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
+
+          nohup cloudflared tunnel --url http://localhost:6081 > /tmp/cloudflared-android.log 2>&1 &
+          nohup cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared-linux.log 2>&1 &
+          nohup cloudflared tunnel --url http://localhost:8090 > /tmp/cloudflared-cert.log 2>&1 &
+          
+          ANDROID_URL=""
+          LINUX_URL=""
+          CERT_URL=""
+          for i in {1..30}; do
+            [ -z "$ANDROID_URL" ] && ANDROID_URL=$(grep -o 'https://[-0-9a-z]*\.trycloudflare\.com' /tmp/cloudflared-android.log | head -n 1)
+            [ -z "$LINUX_URL" ] && LINUX_URL=$(grep -o 'https://[-0-9a-z]*\.trycloudflare\.com' /tmp/cloudflared-linux.log | head -n 1)
+            [ -z "$CERT_URL" ] && CERT_URL=$(grep -o 'https://[-0-9a-z]*\.trycloudflare\.com' /tmp/cloudflared-cert.log | head -n 1)
+            if [ -n "$ANDROID_URL" ] && [ -n "$LINUX_URL" ] && [ -n "$CERT_URL" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          echo "======================================================================"
+          echo "📱 1. PURE ANDROID ONLY (Fullscreen, No Linux Desktop):"
+          echo "    ${ANDROID_URL}/vnc.html?autoconnect=true&resize=scale"
+          echo "    🔑 Password: waydroid123"
+          echo ""
+          echo "🐧 2. FULL LINUX ROOT DESKTOP (Terminal & System Management):"
+          echo "    ${LINUX_URL}/vnc.html?autoconnect=true&resize=scale"
+          echo "    🔑 Password: waydroid123"
+          echo ""
+          echo "📥 3. CERTIFICATE & FILE DOWNLOAD SERVER:"
+          echo "    ${CERT_URL}/"
+          echo "======================================================================"
+
+      - name: Keep Session Alive
+        run: |
+          echo "Session active for ${{ github.event.inputs.session_duration }} minutes."
+          sleep $(( ${{ github.event.inputs.session_duration }} * 60 ))
