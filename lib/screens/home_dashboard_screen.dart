@@ -52,7 +52,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final (list, active) = await ProfileManager.loadProfiles();
     if (mounted) {
       setState(() {
-        _profiles = list;
+        _profiles = list.where((p) => p.platform != 'Gemini' && p.platform != 'Colab').toList();
         _activeId = active;
       });
     }
@@ -220,13 +220,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'Adobe Stock Accounts',
+                          'Stock Accounts',
                           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                         ),
                       ),
                       TextButton(
                         onPressed: () => widget.onNavigateTab(3),
-                        child: const Text('Open Earn Adobe >', style: TextStyle(fontSize: 12)),
+                        child: const Text('All Earnings >', style: TextStyle(fontSize: 12)),
                       ),
                     ],
                   ),

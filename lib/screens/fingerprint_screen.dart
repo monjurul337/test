@@ -135,6 +135,10 @@ class _FingerprintScreenState extends State<FingerprintScreen> {
           }
 
           return AlertDialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+            titlePadding: const EdgeInsets.fromLTRB(16, 16, 12, 6),
+            contentPadding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             backgroundColor: AppColors.cardOf(ctx),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -158,7 +162,7 @@ class _FingerprintScreenState extends State<FingerprintScreen> {
               ],
             ),
             content: SizedBox(
-              width: double.maxFinite,
+              width: MediaQuery.of(ctx).size.width - 24,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -177,7 +181,7 @@ class _FingerprintScreenState extends State<FingerprintScreen> {
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
-                      children: ['All', 'Adobe Stock', 'Shutterstock', 'Magnific', 'Colab', 'Gemini'].map((pl) {
+                      children: ['All', 'Adobe Stock', 'Shutterstock', 'Magnific', 'Colab'].map((pl) {
                         return ChoiceChip(
                           label: Text(pl, style: const TextStyle(fontSize: 11)),
                           selected: platform == pl,

@@ -21,7 +21,7 @@ class MhMotionApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeModeNotifier,
       builder: (_, mode, __) => MaterialApp(
-        title: 'Adobe Stock Video Studio',
+        title: 'Stock Automation',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,

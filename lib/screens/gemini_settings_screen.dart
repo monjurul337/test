@@ -5,13 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../models/studio_models.dart';
 import '../services/anti_detect_scripts.dart';
+import '../services/colab_autopilot.dart';
 import '../services/gemini_cookie_service.dart';
 import '../theme/app_theme.dart';
 
 class GeminiSettingsScreen extends StatefulWidget {
   final FingerprintProfile fingerprint;
+  final ValueChanged<String>? onColabTunnelDetected;
 
-  const GeminiSettingsScreen({super.key, required this.fingerprint});
+  const GeminiSettingsScreen({super.key, required this.fingerprint, this.onColabTunnelDetected});
 
   @override
   State<GeminiSettingsScreen> createState() => _GeminiSettingsScreenState();
@@ -78,6 +80,110 @@ class _GeminiSettingsScreenState extends State<GeminiSettingsScreen> {
     }
   }
 
+  Future<void> _openColabWebView() async {
+    InAppWebViewController? colabCtrl;
+    const scannerJs = r"""
+(function() {
+  if (window.__mhColabScannerInstalled) return;
+  window.__mhColabScannerInstalled = true;
+  const re = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/ig;
+  function emitTunnel(url) {
+    if (!url || window.__mhLastEmittedTunnel === url) return;
+    window.__mhLastEmittedTunnel = url;
+    try { window.flutter_inappwebview?.callHandler('onColabTunnel', url); } catch (e) {}
+    try { if (window.top && window.top !== window) window.top.postMessage({ type: 'MH_COLAB_TUNNEL', url: url }, '*'); } catch (e) {}
+  }
+  if (window === window.top) {
+    window.addEventListener('message', function(ev) {
+      if (ev?.data?.type === 'MH_COLAB_TUNNEL' && typeof ev.data.url === 'string') emitTunnel(ev.data.url);
+    });
+  }
+  setInterval(() => {
+    try {
+      const links = document.querySelectorAll('a[href*="trycloudflare.com"]');
+      if (links?.length) {
+        const m = (links[links.length - 1].href || '').match(re);
+        if (m?.length) return emitTunnel(m[m.length - 1]);
+      }
+      const txt = (document.body?.innerText || document.documentElement?.textContent || '');
+      const m = txt.match(re);
+      if (m?.length) emitTunnel(m[m.length - 1]);
+    } catch (e) {}
+  }, 1500);
+})();
+""";
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Google Colab T4 Session', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            actions: [
+              IconButton(
+                tooltip: 'Run Cell',
+                icon: const Icon(Icons.play_arrow_rounded, color: AppColors.success),
+                onPressed: () async {
+                  await colabCtrl?.evaluateJavascript(source: ColabAutopilot.autoRunCellScript);
+                },
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+          body: InAppWebView(
+            initialUrlRequest: URLRequest(url: WebUri('https://colab.research.google.com/')),
+            initialSettings: InAppWebViewSettings(
+              userAgent: widget.fingerprint.userAgent,
+              javaScriptEnabled: true,
+              domStorageEnabled: true,
+              thirdPartyCookiesEnabled: true,
+              supportMultipleWindows: true,
+              javaScriptCanOpenWindowsAutomatically: true,
+              preferredContentMode: UserPreferredContentMode.MOBILE,
+              useWideViewPort: false,
+              loadWithOverviewMode: true,
+              initialScale: 100,
+              textZoom: 100,
+            ),
+            initialUserScripts: UnmodifiableListView<UserScript>([
+              UserScript(
+                source: AntiDetectScripts.buildUserScript(widget.fingerprint),
+                injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+                forMainFrameOnly: false,
+              ),
+              UserScript(
+                source: scannerJs,
+                injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+                forMainFrameOnly: false,
+              ),
+            ]),
+            onWebViewCreated: (c) {
+              colabCtrl = c;
+              c.addJavaScriptHandler(
+                handlerName: 'onColabTunnel',
+                callback: (args) {
+                  if (args.isNotEmpty && args[0] is String) {
+                    final u = (args[0] as String).trim();
+                    if (u.startsWith('https://')) {
+                      widget.onColabTunnelDetected?.call(u);
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                    }
+                  }
+                },
+              );
+            },
+            onLoadStop: (c, url) async {
+              await c.evaluateJavascript(source: ColabAutopilot.keepAliveScript);
+              await c.evaluateJavascript(source: scannerJs);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openGeminiLoginWebView() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -100,6 +206,11 @@ class _GeminiSettingsScreenState extends State<GeminiSettingsScreen> {
               thirdPartyCookiesEnabled: true,
               supportMultipleWindows: true,
               javaScriptCanOpenWindowsAutomatically: true,
+              preferredContentMode: UserPreferredContentMode.MOBILE,
+              useWideViewPort: false,
+              loadWithOverviewMode: true,
+              initialScale: 100,
+              textZoom: 100,
             ),
             initialUserScripts: UnmodifiableListView<UserScript>([
               UserScript(
@@ -177,6 +288,61 @@ class _GeminiSettingsScreenState extends State<GeminiSettingsScreen> {
                     ),
                     icon: const Icon(Icons.login_rounded, size: 18),
                     label: Text(_geminiActive ? 'Manage Gemini Web Session' : 'Sign in to Gemini Web'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        const SizedBox(height: 12),
+
+        // Google Colab T4 Session Card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.terminal_rounded, color: AppColors.success, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Google Colab T4 Session', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                          Text(
+                            'Sign in & run notebook — auto-connects to Studio',
+                            style: TextStyle(fontSize: 11.5, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _openColabWebView,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+                    label: const Text('Sign in & Open Google Colab', style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],

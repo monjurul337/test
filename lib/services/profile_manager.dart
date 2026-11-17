@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:math';
@@ -99,6 +100,11 @@ class ProfileManager {
     'https://colab.research.google.com',
     'https://gemini.google.com',
     'https://contributor.stock.adobe.com',
+    'https://auth.services.adobe.com',
+    'https://submit.shutterstock.com',
+    'https://contributor-accounts.shutterstock.com',
+    'https://contributor.magnific.com',
+    'https://magnific.ai',
   ];
 
   static Future<(List<AccountProfile>, String)> loadProfiles() async {
@@ -128,12 +134,6 @@ class ProfileManager {
           id: 'p_magnific',
           name: 'Magnific #1',
           platform: 'Magnific',
-          seed: r.nextInt(899999) + 100000,
-        ),
-        AccountProfile(
-          id: 'p_gemini',
-          name: 'Gemini Web #1',
-          platform: 'Gemini',
           seed: r.nextInt(899999) + 100000,
         ),
       ];
@@ -204,8 +204,16 @@ class ProfileManager {
         name: old.name,
         seed: old.seed,
         osType: old.osType,
+        platform: old.platform,
+        customUserAgent: old.customUserAgent,
+        customWebglVendor: old.customWebglVendor,
+        customWebglRenderer: old.customWebglRenderer,
+        canvasMode: old.canvasMode,
+        audioMode: old.audioMode,
+        timezone: old.timezone,
         wgConfName: old.wgConfName,
         wgConfContent: old.wgConfContent,
+        proxyUrl: old.proxyUrl,
         lastEarnings: earnings,
         lastDownloads: downloads,
         lastIp: old.lastIp,
@@ -262,8 +270,16 @@ class ProfileManager {
         name: old.name,
         seed: old.seed,
         osType: old.osType,
+        platform: old.platform,
+        customUserAgent: old.customUserAgent,
+        customWebglVendor: old.customWebglVendor,
+        customWebglRenderer: old.customWebglRenderer,
+        canvasMode: old.canvasMode,
+        audioMode: old.audioMode,
+        timezone: old.timezone,
         wgConfName: old.wgConfName,
         wgConfContent: old.wgConfContent,
+        proxyUrl: old.proxyUrl,
         lastEarnings: old.lastEarnings,
         lastDownloads: old.lastDownloads,
         lastIp: ip,
@@ -281,5 +297,74 @@ class ProfileManager {
   static Future<bool> disconnectWireGuard() async {
     final ok = await _wgChannel.invokeMethod('disconnect');
     return ok == true;
+  }
+
+  /// Normalizes user input (ip:port, ip:port:user:pass, or full URL) with selected scheme ('http' | 'socks5')
+  static String? normalizeProxy(String scheme, String raw) {
+    final t = raw.trim();
+    if (scheme == 'direct' || t.isEmpty) return null;
+    if (t.startsWith('http://') || t.startsWith('https://') || t.startsWith('socks5://') || t.startsWith('socks4://')) {
+      return t;
+    }
+    final parts = t.split(':');
+    if (parts.length == 4 && !t.contains('@')) {
+      // host:port:user:pass
+      return '$scheme://${parts[2]}:${parts[3]}@${parts[0]}:${parts[1]}';
+    }
+    return '$scheme://$t';
+  }
+
+  /// Tests the real public IP & Country (HTTP/WireGuard) or verifies live SOCKS5 handshake
+  static Future<(String ip, String country)> testProfileIp(AccountProfile acc) async {
+    final pUrl = acc.proxyUrl?.trim() ?? '';
+    if (pUrl.startsWith('socks5://') || pUrl.startsWith('socks4://')) {
+      try {
+        final uri = Uri.parse(pUrl);
+        final port = uri.hasPort ? uri.port : 1080;
+        final sock = await Socket.connect(uri.host, port, timeout: const Duration(seconds: 7));
+        final hasAuth = uri.userInfo.isNotEmpty;
+        sock.add([0x05, 0x01, hasAuth ? 0x02 : 0x00]);
+        final resp = await sock.first.timeout(const Duration(seconds: 5));
+        await sock.close();
+        if (resp.isNotEmpty && resp[0] == 0x05) {
+          return (uri.host, 'SOCKS5 OK');
+        }
+      } catch (_) {
+        return ('SOCKS5 Err', 'Offline');
+      }
+    }
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      if (pUrl.isNotEmpty) {
+        final uri = Uri.tryParse(pUrl.contains('://') ? pUrl : 'http://$pUrl');
+        if (uri != null && uri.host.isNotEmpty) {
+          final port = uri.hasPort ? uri.port : 8080;
+          client.findProxy = (_) => 'PROXY ${uri.host}:$port';
+          if (uri.userInfo.isNotEmpty && uri.userInfo.contains(':')) {
+            final parts = uri.userInfo.split(':');
+            client.addProxyCredentials(
+              uri.host,
+              port,
+              '',
+              HttpClientBasicCredentials(parts[0], parts.sublist(1).join(':')),
+            );
+          }
+        }
+      }
+      final req = await client.getUrl(Uri.parse('https://ipwho.is/'));
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      final body = await res.transform(utf8.decoder).join();
+      final data = jsonDecode(body);
+      if (data is Map && data['ip'] != null) {
+        final ip = data['ip'].toString();
+        final cc = (data['country_code'] ?? data['country'] ?? 'Unknown').toString();
+        return (ip, cc);
+      }
+    } catch (_) {
+    } finally {
+      client.close(force: true);
+    }
+    return ('Check Failed', 'Offline');
   }
 }

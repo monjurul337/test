@@ -24,6 +24,8 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   final _studioKey = GlobalKey<StudioScreenState>();
+  final _browserKey = GlobalKey<BrowserWorkspaceScreenState>();
+  DateTime? _lastBackAt;
   final _api = MhMotionApi();
 
   int _navIndex = 1;
@@ -90,8 +92,19 @@ class _HomeShellState extends State<HomeShell> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Gemini & Metadata Settings', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
-          body: GeminiSettingsScreen(fingerprint: _fp),
+          appBar: AppBar(title: const Text('Colab, Gemini & Settings', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+          body: GeminiSettingsScreen(
+            fingerprint: _fp,
+            onColabTunnelDetected: (url) {
+              setState(() {
+                _detectedTunnel = url;
+                _navIndex = 1;
+              });
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
         ),
       ),
     );
@@ -110,15 +123,46 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     const titles = [
       'Dashboard',
-      'Adobe Stock Video Studio',
-      'Upload Panel (Adobe Stock)',
+      'Stock Automation',
+      'Upload & Submit',
       'All Earnings',
       'Accounts & Browser',
     ];
 
     final hideChrome = _isFullScreen && (_navIndex == 1 || _navIndex == 4);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_navIndex == 4 && (_browserKey.currentState != null)) {
+          final handled = await _browserKey.currentState!.handleBack();
+          if (handled) return;
+        }
+        if (_isFullScreen) {
+          _setFullScreen(false);
+          return;
+        }
+        if (_navIndex != 0) {
+          setState(() => _navIndex = 0);
+          return;
+        }
+        final now = DateTime.now();
+        if (_lastBackAt == null || now.difference(_lastBackAt!) > const Duration(seconds: 2)) {
+          _lastBackAt = now;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Press back again to exit Stock Automation'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
       appBar: hideChrome
           ? null
           : AppBar(
@@ -131,7 +175,7 @@ class _HomeShellState extends State<HomeShell> {
             ),
             child: const Center(
               child: Text(
-                'AS',
+                'SA',
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Colors.white),
               ),
             ),
@@ -248,6 +292,7 @@ class _HomeShellState extends State<HomeShell> {
           ),
           EarnAdobeScreen(fingerprint: _fp),
           BrowserWorkspaceScreen(
+            key: _browserKey,
             fingerprint: _fp,
             profilesVersion: _profilesVersion,
             onOpenProfiles: _openAntiDetectProfiles,
@@ -310,6 +355,7 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Accounts',
           ),
         ],
+      ),
       ),
     );
   }

@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -65,6 +66,34 @@ class MainActivity : FlutterActivity() {
                         .setAutoCancel(true)
                         .build()
                     nm.notify(202, notif)
+                    result.success(true)
+                }
+                                "notifyColabDisconnected" -> {
+                    val reason = call.argument<String>("reason") ?: "Colab disconnected — auto-reconnecting"
+                    val chId = "mh_motion_disconnect"
+                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val ch = NotificationChannel(chId, "Colab Disconnect Alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                            enableVibration(true)
+                        }
+                        nm.createNotificationChannel(ch)
+                    }
+                    try {
+                        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                        RingtoneManager.getRingtone(applicationContext, soundUri)?.play()
+                    } catch (_: Exception) {}
+                    val pi = PendingIntent.getActivity(
+                        this, 2, Intent(this, MainActivity::class.java),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    val notif = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, chId) else @Suppress("DEPRECATION") Notification.Builder(this))
+                        .setContentTitle("Colab Disconnected!")
+                        .setContentText(reason)
+                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setContentIntent(pi)
+                        .setAutoCancel(true)
+                        .build()
+                    nm.notify(203, notif)
                     result.success(true)
                 }
                 "requestIgnoreBattery" -> {

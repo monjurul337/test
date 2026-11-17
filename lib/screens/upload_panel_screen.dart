@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -49,7 +50,11 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
   bool _generating = false;
   bool _submitting = false;
   bool _showStockWebView = false;
-  final Set<StockMarketplace> _selectedMarkets = {StockMarketplace.adobeStock};
+  final Set<StockMarketplace> _selectedMarkets = {
+    StockMarketplace.adobeStock,
+    StockMarketplace.shutterstock,
+    StockMarketplace.magnific,
+  };
   final Map<StockMarketplace, InAppWebViewController?> _marketCtrls = {};
   String _status = 'Add rendered MP4s or pick videos from your phone to start.';
   StockDashboardStats _stats = const StockDashboardStats();
@@ -82,15 +87,25 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
   @override
   void didUpdateWidget(covariant UploadPanelScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _handleIncomingStudioVideos(oldWidget);
+  }
+
+  Future<void> _handleIncomingStudioVideos(UploadPanelScreen oldWidget) async {
+    bool added = false;
     if (widget.queuedBatch.isNotEmpty && widget.queuedBatch != oldWidget.queuedBatch) {
       for (final item in widget.queuedBatch) {
         if (!_queue.any((q) => q.file.path == item.$1.path)) {
-          _enqueueFile(item.$1, item.$2, '');
+          await _enqueueFile(item.$1, item.$2, '');
+          added = true;
         }
       }
     } else if (widget.queuedVideo != null &&
         widget.queuedVideo!.path != oldWidget.queuedVideo?.path) {
-      _enqueueFile(widget.queuedVideo!, widget.queuedSceneName, widget.queuedShaderCode);
+      await _enqueueFile(widget.queuedVideo!, widget.queuedSceneName, widget.queuedShaderCode);
+      added = true;
+    }
+    if (added && mounted) {
+      await _generateAllQueueMeta();
     }
   }
 
@@ -170,7 +185,9 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
   Future<void> _generateMetaForItem(StockQueueItem item) async {
     final hasSession = await GeminiCookieService.hasActiveSession();
     if (!hasSession) {
-      setState(() => _status = 'Sign in on Browser -> Gemini tab first.');
+      if (mounted) {
+        setState(() => _status = 'Queued! Sign in to Gemini Web in Settings (⚙️) to auto-generate metadata.');
+      }
       return;
     }
     final thumb = await VideoThumbnail.thumbnailData(
@@ -181,41 +198,57 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
     );
     if (thumb == null) return;
 
+    final prefs = await SharedPreferences.getInstance();
+    final prefCat = prefs.getString('mh_meta_category') ?? 'Abstract';
+    final prefKwCount = prefs.getInt('mh_meta_kw_count') ?? 45;
+    final prefAi = prefs.getBool('mh_meta_ai_flag') ?? _isAiGenerated;
+    final prefSanitize = prefs.getBool('mh_meta_sanitize') ?? true;
+    final prefCustom = prefs.getString('mh_meta_custom_prompt') ?? '';
+
     final b64 = base64Encode(thumb);
-    final prompt = GeminiCookieService.buildAdobeStockPrompt(
+    final basePrompt = GeminiCookieService.buildAdobeStockPrompt(
       item.sceneName,
       item.shaderCode.split('\n').take(6).join(' '),
     );
-    await _geminiCtrl?.evaluateJavascript(
-      source: GeminiCookieService.buildDomInjectionScript(prompt, b64),
-    );
+    final fullPrompt = '$basePrompt\nTarget platforms: Adobe Stock, Shutterstock, Magnific. Preferred category: $prefCat. Target keywords: $prefKwCount.${prefCustom.isNotEmpty ? " Style: $prefCustom" : ""}';
 
-    for (int i = 0; i < 20; i++) {
-      await Future.delayed(const Duration(seconds: 2));
-      final txt = await _geminiCtrl?.evaluateJavascript(
-        source: 'document.body ? document.body.innerText : ""',
-      );
-      if (txt is String) {
-        final parsed = GeminiCookieService.parseJsonFromText(txt);
-        if (parsed != null && parsed.title.isNotEmpty) {
-          final cleanTags = StockPreflightValidator.sanitizeKeywords(parsed.keywords);
-          item.metadata = AdobeMetadata(
-            title: parsed.title,
-            category: parsed.category,
-            keywords: cleanTags,
-            isAiGenerated: _isAiGenerated,
-          );
-          item.status = 'meta_ready';
-          if (_activeItem?.id == item.id && mounted) {
-            setState(() {
-              _titleCtrl.text = item.metadata!.title;
-              _category = _categories.contains(item.metadata!.category)
-                  ? item.metadata!.category
-                  : 'Abstract';
-              _tags = List.from(cleanTags);
-            });
-          }
-          return;
+    final rpcRes = await _geminiCtrl?.callAsyncJavaScript(
+      functionBody: 'return await ${GeminiCookieService.buildDirectRpcScript(fullPrompt, b64).trim().replaceAll(RegExp(r';$'), '')};',
+    );
+    String? rawPayload;
+    if (rpcRes?.value is String) {
+      try {
+        final m = jsonDecode(rpcRes!.value as String);
+        if (m is Map && m['ok'] == true && m['data'] is String) {
+          rawPayload = m['data'] as String;
+        }
+      } catch (_) {
+        rawPayload = rpcRes?.value as String?;
+      }
+    }
+
+    if (rawPayload != null) {
+      final parsed = GeminiCookieService.parseJsonFromText(rawPayload);
+      if (parsed != null && parsed.title.isNotEmpty) {
+        final tags = prefSanitize
+            ? StockPreflightValidator.sanitizeKeywords(parsed.keywords)
+            : parsed.keywords.take(49).toList();
+        item.metadata = AdobeMetadata(
+          title: parsed.title,
+          category: _categories.contains(parsed.category) ? parsed.category : prefCat,
+          keywords: tags.take(prefKwCount.clamp(15, 49)).toList(),
+          isAiGenerated: prefAi,
+        );
+        item.status = 'meta_ready';
+        if (_activeItem?.id == item.id && mounted) {
+          setState(() {
+            _titleCtrl.text = item.metadata!.title;
+            _category = _categories.contains(item.metadata!.category)
+                ? item.metadata!.category
+                : prefCat;
+            _tags = List.from(item.metadata!.keywords);
+            _isAiGenerated = prefAi;
+          });
         }
       }
     }
@@ -236,7 +269,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
     if (mounted) {
       setState(() {
         _generating = false;
-        _status = 'Batch metadata generation complete!';
+        _status = 'All-Platform Metadata Ready (Adobe Stock · Shutterstock · Magnific)!';
       });
     }
   }
@@ -575,7 +608,7 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
                   controller: _titleCtrl,
                   maxLength: 70,
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(labelText: 'Adobe Stock Title'),
+                  decoration: const InputDecoration(labelText: 'Commercial Stock Title'),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
@@ -696,39 +729,27 @@ class _UploadPanelScreenState extends State<UploadPanelScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Toggleable Live Adobe Stock Panel
-        Card(
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.web, color: AppColors.primary),
-                title: const Text('Adobe Stock Contributor Panel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                trailing: Switch(
-                  value: _showStockWebView,
-                  activeColor: AppColors.primary,
-                  onChanged: (v) => setState(() => _showStockWebView = v),
-                ),
+        // Hidden background WebView for zero-API Adobe Stock submission
+        SizedBox(
+          height: 1,
+          width: 1,
+          child: Opacity(
+            opacity: 0.01,
+            child: InAppWebView(
+              initialUrlRequest: URLRequest(url: WebUri(AdobeStockAutomation.uploadUrl)),
+              initialSettings: InAppWebViewSettings(
+                userAgent: widget.fingerprint.userAgent,
+                thirdPartyCookiesEnabled: true,
+                domStorageEnabled: true,
               ),
-              SizedBox(
-                height: _showStockWebView ? 380 : 1,
-                child: InAppWebView(
-                  initialUrlRequest: URLRequest(url: WebUri(AdobeStockAutomation.uploadUrl)),
-                  initialSettings: InAppWebViewSettings(
-                    userAgent: widget.fingerprint.userAgent,
-                    thirdPartyCookiesEnabled: true,
-                    domStorageEnabled: true,
-                    preferredContentMode: UserPreferredContentMode.MOBILE,
-                    useWideViewPort: true,
-                    loadWithOverviewMode: false,
-                  ),
-                  initialUserScripts: UnmodifiableListView<UserScript>([UserScript(
-                      source: AntiDetectScripts.buildUserScript(widget.fingerprint),
-                      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-                    ),]),
-                  onWebViewCreated: (c) => _adobeCtrl = c,
+              initialUserScripts: UnmodifiableListView<UserScript>([
+                UserScript(
+                  source: AntiDetectScripts.buildUserScript(widget.fingerprint),
+                  injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
                 ),
-              ),
-            ],
+              ]),
+              onWebViewCreated: (c) => _adobeCtrl = c,
+            ),
           ),
         ),
         SizedBox(

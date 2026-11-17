@@ -38,7 +38,7 @@ class KeepAliveService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-            .setContentTitle("MH Motion Studio Running")
+            .setContentTitle("Stock Automation Running")
             .setContentText("Colab Keep-Alive & Render session active in background")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pi)
