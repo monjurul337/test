@@ -22,6 +22,7 @@ import 'foreground_keep_alive.dart';
 import 'image_service.dart';
 import 'models.dart';
 import 'studio_constants.dart';
+import 'task_backend.dart';
 
 class StudioEngine {
   StudioEngine({StatusSink? onStatus, http.Client? client})
@@ -206,6 +207,30 @@ class StudioEngine {
   /// v88: polish a rough animation idea into a production-ready
   /// video prompt via a Gemini text call on the current session —
   /// the video twin of polishPrompt (same session failover).
+  /// v92 — Task-mode video BACKEND (no browser): runs the task
+  /// through the processSession channel + hNvQHb poll (see
+  /// task_backend.dart) on the same Gemini session the image
+  /// pipeline uses. Throws [TaskBackendException] naming the failed
+  /// step; the AnimationEngine falls back to the browser driver.
+  Future<Uint8List> runTaskVideoBackend(
+    String taskText, {
+    required void Function(String phase, String message) onPhase,
+    required DateTime deadline,
+    http.Client? httpClient,
+  }) async {
+    final session = await gemini.getSession();
+    final owned = httpClient == null;
+    final client = TaskBackendClient(
+      client: httpClient ?? http.Client(),
+      session: session,
+    );
+    try {
+      return await client.run(taskText, onPhase: onPhase, deadline: deadline);
+    } finally {
+      if (owned) client.close();
+    }
+  }
+
   Future<String> polishVideoPrompt(String prompt) async {
     final session = await gemini.getSession();
     _status('generating', 1, 'Polishing video prompt with Gemini...');

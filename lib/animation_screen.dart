@@ -51,21 +51,33 @@ class AnimationSection extends StatefulWidget {
 
 class _AnimationSectionState extends State<AnimationSection> {
   final _promptCtrl = TextEditingController();
+  final _bulkCtrl = TextEditingController();
   bool _polishing = false;
   final _scrollCtrl = ScrollController();
   final _galleryKey = GlobalKey();
   int _seenVideoCount = 0;
 
+  /// v93 — repeat count for "Ei prompt ×N bar" in the bulk card.
+  int _bulkRepeat = 5;
+
+  /// v93 — the screen's colours come from the app theme (dark
+  /// lavender by default, light lavender when the toggle is on),
+  /// never hardcoded — so the dark/light switch repaints this
+  /// screen too.
+  ColorScheme get _cs => Theme.of(context).colorScheme;
+
   @override
   void initState() {
     super.initState();
     _promptCtrl.addListener(() => setState(() {}));
+    _bulkCtrl.addListener(() => setState(() {}));
     _seenVideoCount = widget.engine.videos.length;
   }
 
   @override
   void dispose() {
     _promptCtrl.dispose();
+    _bulkCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
@@ -107,7 +119,14 @@ class _AnimationSectionState extends State<AnimationSection> {
             width: 430,
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(12),
-              child: _promptCard(isAndroid),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _promptCard(isAndroid),
+                  const SizedBox(height: 12),
+                  _bulkCard(),
+                ],
+              ),
             ),
           ),
           const VerticalDivider(width: 1),
@@ -122,6 +141,8 @@ class _AnimationSectionState extends State<AnimationSection> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _promptCard(isAndroid),
+          const SizedBox(height: 12),
+          _bulkCard(),
           const SizedBox(height: 12),
           _galleryInline(),
         ],
@@ -157,10 +178,10 @@ class _AnimationSectionState extends State<AnimationSection> {
         !engine.busy &&
         widget.signedIn;
     return Card(
-      color: const Color(0xFF15151D),
+      color: _cs.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFF2A2A35)),
+        side: BorderSide(color: _cs.outlineVariant),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -173,14 +194,14 @@ class _AnimationSectionState extends State<AnimationSection> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFA89CFE).withValues(alpha: 0.16),
+                    color: _cs.primary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.movie_outlined,
-                      color: Color(0xFFA89CFE), size: 20),
+                  child: Icon(Icons.movie_outlined,
+                      color: _cs.primary, size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -188,10 +209,10 @@ class _AnimationSectionState extends State<AnimationSection> {
                           style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
-                              color: Colors.white)),
+                              color: _cs.onSurface)),
                       Text('Gemini diye video banaw — Zedge live wallpaper',
                           style: TextStyle(
-                              fontSize: 11, color: Colors.white60)),
+                              fontSize: 11, color: _cs.onSurface.withValues(alpha: 0.6))),
                     ],
                   ),
                 ),
@@ -203,23 +224,23 @@ class _AnimationSectionState extends State<AnimationSection> {
               controller: _promptCtrl,
               minLines: 3,
               maxLines: 5,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: _cs.onSurface, fontSize: 14),
               decoration: InputDecoration(
                 hintText:
                     'e.g. Neon blue liquid energy charging smartphone…',
-                hintStyle: const TextStyle(color: Colors.white38),
+                hintStyle: TextStyle(color: _cs.onSurface.withValues(alpha: 0.38)),
                 filled: true,
-                fillColor: const Color(0xFF1B1B23),
+                fillColor: _cs.surfaceContainerHigh,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFF2A2A35)),
+                  borderSide: BorderSide(color: _cs.outlineVariant),
                 ),
                 suffixIcon: _promptCtrl.text.isEmpty
                     ? null
                     : IconButton(
                         key: const ValueKey('animPromptClear'),
-                        icon: const Icon(Icons.clear,
-                            size: 18, color: Colors.white54),
+                        icon: Icon(Icons.clear,
+                            size: 18, color: _cs.onSurface.withValues(alpha: 0.54)),
                         tooltip: 'Clear',
                         onPressed: () => _promptCtrl.clear(),
                       ),
@@ -243,10 +264,10 @@ class _AnimationSectionState extends State<AnimationSection> {
                   label: Text(_polishing ? 'Polishing…' : 'Polish prompt'),
                 ),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Gemini prompt-ta sajiye debe — original concept thakbe',
-                    style: TextStyle(fontSize: 11, color: Colors.white54),
+                    style: TextStyle(fontSize: 11, color: _cs.onSurface.withValues(alpha: 0.54)),
                   ),
                 ),
               ],
@@ -278,28 +299,28 @@ class _AnimationSectionState extends State<AnimationSection> {
             // complex work — Carbon, locked). Neon is the default.
             Row(
               children: [
-                const Text('Model',
+                Text('Model',
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white70)),
+                        color: _cs.onSurface.withValues(alpha: 0.7))),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1B1B23),
+                      color: _cs.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF2A2A35)),
+                      border: Border.all(color: _cs.outlineVariant),
                     ),
                     child: DropdownButton<AnimationModel>(
                       key: const ValueKey('animModelPicker'),
                       value: animationModelById(engine.selectedModelId),
                       isExpanded: true,
                       underline: const SizedBox.shrink(),
-                      dropdownColor: const Color(0xFF171F3D),
-                      icon: const Icon(Icons.keyboard_arrow_down,
-                          color: Colors.white54),
+                      dropdownColor: _cs.surfaceContainer,
+                      icon: Icon(Icons.keyboard_arrow_down,
+                          color: _cs.onSurface.withValues(alpha: 0.54)),
                       items: [
                         for (final m in kAnimationModels)
                           DropdownMenuItem<AnimationModel>(
@@ -318,13 +339,13 @@ class _AnimationSectionState extends State<AnimationSection> {
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
                                         color: m.locked
-                                            ? Colors.white38
-                                            : Colors.white),
+                                            ? _cs.onSurface.withValues(alpha: 0.38)
+                                            : _cs.onSurface),
                                   ),
                                 ),
                                 if (m.locked)
-                                  const Icon(Icons.lock_outline,
-                                      size: 16, color: Colors.white38),
+                                  Icon(Icons.lock_outline,
+                                      size: 16, color: _cs.onSurface.withValues(alpha: 0.38)),
                               ],
                             ),
                           ),
@@ -344,28 +365,28 @@ class _AnimationSectionState extends State<AnimationSection> {
             // house standard).
             Row(
               children: [
-                const Text('Style',
+                Text('Style',
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white70)),
+                        color: _cs.onSurface.withValues(alpha: 0.7))),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1B1B23),
+                      color: _cs.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF2A2A35)),
+                      border: Border.all(color: _cs.outlineVariant),
                     ),
                     child: DropdownButton<AnimationMood>(
                       key: const ValueKey('animStylePicker'),
                       value: animationMoodById(engine.selectedStyleId),
                       isExpanded: true,
                       underline: const SizedBox.shrink(),
-                      dropdownColor: const Color(0xFF171F3D),
-                      icon: const Icon(Icons.keyboard_arrow_down,
-                          color: Colors.white54),
+                      dropdownColor: _cs.surfaceContainer,
+                      icon: Icon(Icons.keyboard_arrow_down,
+                          color: _cs.onSurface.withValues(alpha: 0.54)),
                       items: [
                         for (final s in kAnimationMoods)
                           DropdownMenuItem<AnimationMood>(
@@ -373,10 +394,10 @@ class _AnimationSectionState extends State<AnimationSection> {
                             child: Text(
                               s.label,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.white),
+                                  color: _cs.onSurface),
                             ),
                           ),
                       ],
@@ -400,11 +421,11 @@ class _AnimationSectionState extends State<AnimationSection> {
             // Roboto phones keep one row.
             Row(
               children: [
-                const Text('Duration',
+                Text('Duration',
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white70)),
+                        color: _cs.onSurface.withValues(alpha: 0.7))),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Wrap(
@@ -428,7 +449,7 @@ class _AnimationSectionState extends State<AnimationSection> {
             // left out of the prompt.
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -436,10 +457,10 @@ class _AnimationSectionState extends State<AnimationSection> {
                           style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white70)),
+                              color: _cs.onSurface.withValues(alpha: 0.7))),
                       Text('Loop-e cholbe, kono cut thakbe na',
                           style: TextStyle(
-                              fontSize: 11, color: Colors.white54)),
+                              fontSize: 11, color: _cs.onSurface.withValues(alpha: 0.54))),
                     ],
                   ),
                 ),
@@ -456,7 +477,7 @@ class _AnimationSectionState extends State<AnimationSection> {
             // he is told when it is ready.
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -464,10 +485,10 @@ class _AnimationSectionState extends State<AnimationSection> {
                           style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white70)),
+                              color: _cs.onSurface.withValues(alpha: 0.7))),
                       Text('Background-e banbe, sesh hole janabe',
                           style: TextStyle(
-                              fontSize: 11, color: Colors.white54)),
+                              fontSize: 11, color: _cs.onSurface.withValues(alpha: 0.54))),
                     ],
                   ),
                 ),
@@ -504,7 +525,7 @@ class _AnimationSectionState extends State<AnimationSection> {
                             fontSize: 12,
                             color: engine.phase == AnimationPhase.error
                                 ? const Color(0xFFF87171)
-                                : Colors.white70)),
+                                : _cs.onSurface.withValues(alpha: 0.7))),
                   ),
                 ],
               ),
@@ -517,12 +538,275 @@ class _AnimationSectionState extends State<AnimationSection> {
             ],
             if (!isAndroid) ...[
               const SizedBox(height: 8),
-              const Text(
+              Text(
                   'Video generation ekhon Android app-e — Windows-e gallery + ZIP cholbe.',
-                  style: TextStyle(fontSize: 12, color: Colors.white54)),
+                  style: TextStyle(fontSize: 12, color: _cs.onSurface.withValues(alpha: 0.54))),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// v93 — Bulk generate: one prompt per line (like the image
+  /// batch queue) or the current prompt repeated N times; the
+  /// engine runs the queue one item after another in the
+  /// background, and each finished video lands in the gallery.
+  Future<void> _onBulkStart() async {
+    await widget.engine.startBulk(signedIn: widget.signedIn);
+  }
+
+  Widget _bulkCard() {
+    final engine = widget.engine;
+    final bulkText = _bulkCtrl.text.trim();
+    final promptText = _promptCtrl.text.trim();
+    final canAddLines = bulkText.isNotEmpty;
+    final canAddRepeat = promptText.isNotEmpty &&
+        checkAnimationPromptSafety(promptText).isEmpty;
+    final canRun = engine.bulkQueue.isNotEmpty &&
+        !engine.bulkRunning &&
+        !engine.busy &&
+        widget.signedIn;
+    return Card(
+      color: _cs.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: _cs.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _cs.primary.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child:
+                      Icon(Icons.queue_play_next, color: _cs.primary, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Bulk generate',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: _cs.onSurface)),
+                      Text('Ek line-e ekta prompt — ekta sesh hole porer-ta cholbe',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: _cs.onSurface.withValues(alpha: 0.6))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('animBulkField'),
+              controller: _bulkCtrl,
+              minLines: 3,
+              maxLines: 5,
+              style: TextStyle(color: _cs.onSurface, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'prottek line-e ekta charging prompt…',
+                hintStyle: TextStyle(
+                    color: _cs.onSurface.withValues(alpha: 0.38)),
+                filled: true,
+                fillColor: _cs.surfaceContainerHigh,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _cs.outlineVariant),
+                ),
+                suffixIcon: _bulkCtrl.text.isEmpty
+                    ? null
+                    : IconButton(
+                        key: const ValueKey('animBulkClear'),
+                        icon: Icon(Icons.clear,
+                            size: 18,
+                            color: _cs.onSurface.withValues(alpha: 0.54)),
+                        tooltip: 'Clear',
+                        onPressed: () => _bulkCtrl.clear(),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              key: const ValueKey('animBulkAddLines'),
+              onPressed: canAddLines
+                  ? () {
+                      engine.addBulkPrompts(parseBulkPrompts(_bulkCtrl.text));
+                      _bulkCtrl.clear();
+                    }
+                  : null,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Queue-te dao'),
+            ),
+            const SizedBox(height: 8),
+            // Repeat the single prompt above N times (same idea,
+            // different videos — the tool varies each run). Wrap,
+            // not Row: the Ahem test font makes the label +
+            // dropdown + button ~117px too wide for a Row.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('Ei prompt ×',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _cs.onSurface.withValues(alpha: 0.7))),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: _cs.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _cs.outlineVariant),
+                  ),
+                  child: DropdownButton<int>(
+                    key: const ValueKey('animBulkRepeatPicker'),
+                    value: _bulkRepeat,
+                    underline: const SizedBox.shrink(),
+                    dropdownColor: _cs.surfaceContainer,
+                    icon: Icon(Icons.keyboard_arrow_down,
+                        color: _cs.onSurface.withValues(alpha: 0.54)),
+                    items: [
+                      for (final n in [2, 3, 4, 5, 8, 10])
+                        DropdownMenuItem<int>(
+                          value: n,
+                          child: Text('$n',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: _cs.onSurface)),
+                        ),
+                    ],
+                    onChanged: (n) {
+                      if (n == null) return;
+                      setState(() => _bulkRepeat = n);
+                    },
+                  ),
+                ),
+                TextButton(
+                  key: const ValueKey('animBulkAddRepeat'),
+                  onPressed: canAddRepeat
+                      ? () => engine.addBulkPrompts(
+                          List.filled(_bulkRepeat, promptText))
+                      : null,
+                  child: const Text('Queue-te dao'),
+                ),
+              ],
+            ),
+            if (engine.bulkQueue.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              for (final item in engine.bulkQueue) _bulkItemRow(item),
+            ],
+            if (engine.bulkStatus.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(engine.bulkStatus,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: _cs.onSurface.withValues(alpha: 0.7))),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    key: const ValueKey('animBulkStart'),
+                    onPressed: canRun ? _onBulkStart : null,
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: Text(engine.bulkRunning
+                        ? 'Bulk cholche…'
+                        : 'Sob generate koro'),
+                  ),
+                ),
+                if (engine.bulkRunning) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    key: const ValueKey('animBulkStop'),
+                    onPressed: () => engine.cancelBulk(),
+                    child: const Text('Stop'),
+                  ),
+                ],
+                if (!engine.bulkRunning && engine.bulkQueue.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    key: const ValueKey('animBulkClearQueue'),
+                    onPressed: () => engine.clearBulkQueue(),
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+                'Task mode ON thakle browser khulbe na — bulk background-e cholbe.',
+                style: TextStyle(fontSize: 11, color: Color(0xFFFBBF24))),
+            if (!widget.signedIn) ...[
+              const SizedBox(height: 8),
+              const Text('Bulk-er age Login tab theke Gemini-te sign in koro.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFFFBBF24))),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _bulkItemRow(BulkQueueItem item) {
+    final engine = widget.engine;
+    final IconData icon;
+    final Color iconColor;
+    switch (item.status) {
+      case BulkItemStatus.queued:
+        icon = Icons.hourglass_empty;
+        iconColor = _cs.onSurface.withValues(alpha: 0.54);
+      case BulkItemStatus.running:
+        icon = Icons.autorenew;
+        iconColor = _cs.primary;
+      case BulkItemStatus.done:
+        icon = Icons.check_circle_outline;
+        iconColor = _cs.primary;
+      case BulkItemStatus.failed:
+        icon = Icons.error_outline;
+        iconColor = _cs.error;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${item.shortPrompt} — ${item.statusText}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: _cs.onSurface.withValues(alpha: 0.7)),
+            ),
+          ),
+          if (item.status == BulkItemStatus.queued && !engine.bulkRunning)
+            IconButton(
+              key: ValueKey('animBulkRemove-${item.id}'),
+              icon: Icon(Icons.close,
+                  size: 16, color: _cs.onSurface.withValues(alpha: 0.54)),
+              tooltip: 'Remove',
+              onPressed: () => engine.removeBulkItem(item.id),
+            ),
+        ],
       ),
     );
   }
@@ -531,8 +815,8 @@ class _AnimationSectionState extends State<AnimationSection> {
     final engine = widget.engine;
     return Row(
       children: [
-        const Icon(Icons.video_library_outlined,
-            color: Color(0xFFA89CFE), size: 22),
+        Icon(Icons.video_library_outlined,
+            color: _cs.primary, size: 22),
         const SizedBox(width: 8),
         // The title flexes (ellipsis) so the header never overflows
         // a narrow phone — the count chip + export button keep
@@ -540,41 +824,41 @@ class _AnimationSectionState extends State<AnimationSection> {
         Expanded(
           child: Row(
             children: [
-              const Flexible(
+              Flexible(
                 child: Text('Animations',
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white)),
+                        color: _cs.onSurface)),
               ),
               const SizedBox(width: 8),
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1B1B23),
+                  color: _cs.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF2A2A35)),
+                  border: Border.all(color: _cs.outlineVariant),
                 ),
                 child: Text('${engine.videos.length} videos',
                     style:
-                        const TextStyle(fontSize: 12, color: Colors.white70)),
+                        TextStyle(fontSize: 12, color: _cs.onSurface.withValues(alpha: 0.7))),
               ),
             ],
           ),
         ),
         IconButton(
           key: const ValueKey('animUploadAll'),
-          icon: const Icon(Icons.cloud_upload_outlined,
-              color: Colors.white70),
+          icon: Icon(Icons.cloud_upload_outlined,
+              color: _cs.onSurface.withValues(alpha: 0.7)),
           tooltip: 'Upload all to Panel',
           onPressed:
               engine.videos.isEmpty ? null : widget.onUploadAllToPanel,
         ),
         IconButton(
           key: const ValueKey('animExportZip'),
-          icon: const Icon(Icons.archive_outlined, color: Colors.white70),
+          icon: Icon(Icons.archive_outlined, color: _cs.onSurface.withValues(alpha: 0.7)),
           tooltip: 'Export ZIP',
           onPressed:
               engine.videos.isEmpty ? null : widget.onExportZip,
@@ -593,21 +877,21 @@ class _AnimationSectionState extends State<AnimationSection> {
             width: 88,
             height: 88,
             decoration: BoxDecoration(
-              color: const Color(0xFFA89CFE).withValues(alpha: 0.16),
+              color: _cs.primary.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(24),
             ),
-            child: const Icon(Icons.movie_outlined,
-                color: Color(0xFFA89CFE), size: 40),
+            child: Icon(Icons.movie_outlined,
+                color: _cs.primary, size: 40),
           ),
           const SizedBox(height: 16),
-          const Text('No animations yet',
+          Text('No animations yet',
               style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white)),
+                  color: _cs.onSurface)),
           const SizedBox(height: 6),
-          const Text('Gemini-te prompt dao, video banaw.',
-              style: TextStyle(fontSize: 13, color: Colors.white54),
+          Text('Gemini-te prompt dao, video banaw.',
+              style: TextStyle(fontSize: 13, color: _cs.onSurface.withValues(alpha: 0.54)),
               textAlign: TextAlign.center),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -649,9 +933,9 @@ class _AnimationSectionState extends State<AnimationSection> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF15151D),
+        backgroundColor: _cs.surface,
         title: Text(meta.title.isEmpty ? v.title : meta.title,
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
+            style: TextStyle(color: _cs.onSurface, fontSize: 16)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -662,18 +946,18 @@ class _AnimationSectionState extends State<AnimationSection> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFA89CFE).withValues(alpha: 0.16),
+                    color: _cs.primary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(meta.category,
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFFA89CFE))),
+                      style: TextStyle(
+                          fontSize: 12, color: _cs.primary)),
                 ),
               if (meta.description.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Text(meta.description,
-                    style: const TextStyle(
-                        fontSize: 13, color: Colors.white70)),
+                    style: TextStyle(
+                        fontSize: 13, color: _cs.onSurface.withValues(alpha: 0.7))),
               ],
               if (meta.tags.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -686,14 +970,14 @@ class _AnimationSectionState extends State<AnimationSection> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1B1B23),
+                          color: _cs.surfaceContainerHigh,
                           borderRadius: BorderRadius.circular(12),
                           border:
-                              Border.all(color: const Color(0xFF2A2A35)),
+                              Border.all(color: _cs.outlineVariant),
                         ),
                         child: Text(t,
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.white70)),
+                            style: TextStyle(
+                                fontSize: 12, color: _cs.onSurface.withValues(alpha: 0.7))),
                       ),
                   ],
                 ),
@@ -704,16 +988,16 @@ class _AnimationSectionState extends State<AnimationSection> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close',
-                style: TextStyle(color: Color(0xFFA89CFE))),
+            child: Text('Close',
+                style: TextStyle(color: _cs.primary)),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await widget.onMetadata(v);
             },
-            child: const Text('Regenerate',
-                style: TextStyle(color: Color(0xFFA89CFE))),
+            child: Text('Regenerate',
+                style: TextStyle(color: _cs.primary)),
           ),
         ],
       ),
@@ -729,10 +1013,10 @@ class _AnimationSectionState extends State<AnimationSection> {
     // below, so the title always gets the full width.
     final busy = widget.engine.busyVideoId == v.id;
     return Card(
-      color: const Color(0xFF15151D),
+      color: _cs.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFF2A2A35)),
+        side: BorderSide(color: _cs.outlineVariant),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -742,36 +1026,36 @@ class _AnimationSectionState extends State<AnimationSection> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFA89CFE).withValues(alpha: 0.16),
+                color: _cs.primary.withValues(alpha: 0.16),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.play_circle_outline,
-                  color: Color(0xFFA89CFE), size: 22),
+              child: Icon(Icons.play_circle_outline,
+                  color: _cs.primary, size: 22),
             ),
             title: Text(v.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white)),
+                    color: _cs.onSurface)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                     '${v.specLine} · ${animationModelById(v.modelId).label}',
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.white54)),
+                    style: TextStyle(
+                        fontSize: 12, color: _cs.onSurface.withValues(alpha: 0.54))),
                 if (v.isUploaded)
                   Text('Queued on ${v.uploadedAccount}',
-                      style: const TextStyle(
-                          fontSize: 11, color: Color(0xFFA89CFE))),
+                      style: TextStyle(
+                          fontSize: 11, color: _cs.primary)),
               ],
             ),
             trailing: IconButton(
               key: ValueKey('animPlay-${v.id}'),
-              icon: const Icon(Icons.play_arrow, color: Colors.white70),
+              icon: Icon(Icons.play_arrow, color: _cs.onSurface.withValues(alpha: 0.7)),
               tooltip: 'Play',
               onPressed: () => widget.onPlay(v),
             ),
@@ -797,14 +1081,14 @@ class _AnimationSectionState extends State<AnimationSection> {
                           : Icons.auto_awesome_outlined,
                       size: 16,
                       color: v.hasMetadata
-                          ? const Color(0xFFA89CFE)
-                          : Colors.white70),
+                          ? _cs.primary
+                          : _cs.onSurface.withValues(alpha: 0.7)),
                   label: Text(v.hasMetadata ? 'Metadata' : 'AI Metadata',
                       style: TextStyle(
                           fontSize: 12,
                           color: v.hasMetadata
-                              ? const Color(0xFFA89CFE)
-                              : Colors.white70)),
+                              ? _cs.primary
+                              : _cs.onSurface.withValues(alpha: 0.7))),
                   onPressed: busy ? null : () => _onMetadataTap(v),
                 ),
                 const SizedBox(width: 4),
@@ -818,14 +1102,14 @@ class _AnimationSectionState extends State<AnimationSection> {
                           : Icons.cloud_upload_outlined,
                       size: 16,
                       color: v.isUploaded
-                          ? const Color(0xFFA89CFE)
-                          : Colors.white70),
+                          ? _cs.primary
+                          : _cs.onSurface.withValues(alpha: 0.7)),
                   label: Text(v.isUploaded ? 'Queued' : 'Upload',
                       style: TextStyle(
                           fontSize: 12,
                           color: v.isUploaded
-                              ? const Color(0xFFA89CFE)
-                              : Colors.white70)),
+                              ? _cs.primary
+                              : _cs.onSurface.withValues(alpha: 0.7))),
                   onPressed:
                       busy ? null : () => widget.onUploadToPanel(v),
                 ),
@@ -834,11 +1118,11 @@ class _AnimationSectionState extends State<AnimationSection> {
                   style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8)),
                   key: ValueKey('animDelete-${v.id}'),
-                  icon: const Icon(Icons.delete_outline,
-                      size: 16, color: Colors.white54),
-                  label: const Text('Delete',
+                  icon: Icon(Icons.delete_outline,
+                      size: 16, color: _cs.onSurface.withValues(alpha: 0.54)),
+                  label: Text('Delete',
                       style:
-                          TextStyle(fontSize: 12, color: Colors.white54)),
+                          TextStyle(fontSize: 12, color: _cs.onSurface.withValues(alpha: 0.54))),
                   onPressed: () => widget.onDelete(v),
                 ),
               ],

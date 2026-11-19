@@ -26,6 +26,13 @@ class GeminiSession {
   final String fSid;
   final String cookieHeader;
   final int fetchedAtMs;
+
+  /// v92 — Task backend: API keys (AIza…) found in the Gemini page
+  /// HTML (the signaler key is one of them; the client tries each
+  /// for chooseServer) and the X-Server-Token (page key "PI9WOb").
+  /// Extracted at session fetch, never hardcoded.
+  final List<String> apiKeys;
+  final String serverToken;
   const GeminiSession({
     required this.authUser,
     required this.email,
@@ -34,6 +41,8 @@ class GeminiSession {
     required this.fSid,
     required this.cookieHeader,
     required this.fetchedAtMs,
+    this.apiKeys = const [],
+    this.serverToken = '',
   });
   bool get isFresh =>
       DateTime.now().millisecondsSinceEpoch - fetchedAtMs < 15 * 60 * 1000;

@@ -22,6 +22,7 @@ import 'package:gemini_hd_studio/gemini_api.dart';
 import 'package:gemini_hd_studio/main.dart';
 import 'package:gemini_hd_studio/models.dart';
 import 'package:gemini_hd_studio/studio_engine.dart';
+import 'package:gemini_hd_studio/task_backend.dart';
 
 GeckoBrowserRequest _videoReq(String action, Map<String, dynamic> data) =>
     GeckoBrowserRequest(action, const [], 'https://gemini.google.com/app',
@@ -287,6 +288,49 @@ void main() {
           isTrue);
       expect(engine.phase, AnimationPhase.error);
       expect(engine.status, contains('daily limit sesh'));
+    });
+
+    test('v89: timeout names the last driver step, not a blind message',
+        () async {
+      final engine = engineWith();
+      await engine.load();
+      await engine.start(
+          rawPrompt: 'crimson phone', modelId: 'neon', signedIn: true);
+      final jobId = engine.currentJobId;
+      await engine.handleRequest(_videoReq('video_progress', {
+        'jobId': jobId,
+        'phase': 'creating',
+      }));
+      // jobTimeout is 5s in tests — wait for the timer to fire.
+      await Future.delayed(const Duration(seconds: 6));
+      expect(engine.phase, AnimationPhase.error);
+      expect(engine.status, contains('sesh step: video banacche'));
+    });
+
+    test('v90: timeout names the Task-mode step too', () async {
+      final engine = engineWith();
+      await engine.load();
+      await engine.start(
+          rawPrompt: 'crimson phone', modelId: 'neon', signedIn: true);
+      final jobId = engine.currentJobId;
+      await engine.handleRequest(_videoReq('video_progress', {
+        'jobId': jobId,
+        'phase': 'task_mode',
+        'message': 'Task mode-e video banacche…',
+      }));
+      await Future.delayed(const Duration(seconds: 6));
+      expect(engine.phase, AnimationPhase.error);
+      expect(engine.status, contains('sesh step: Task mode-e cholche'));
+    });
+
+    test('v89: timeout with no driver contact says so', () async {
+      final engine = engineWith();
+      await engine.load();
+      await engine.start(
+          rawPrompt: 'crimson phone', modelId: 'neon', signedIn: true);
+      await Future.delayed(const Duration(seconds: 6));
+      expect(engine.phase, AnimationPhase.error);
+      expect(engine.status, contains('kono jogajog hoyni'));
     });
 
     test('buildVideosZip holds the MP4 + metadata.json', () async {
@@ -1073,6 +1117,166 @@ void main() {
       expect(find.text('Charging Animation'), findsOneWidget);
       expect(find.text('No animations yet'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('v92: Task backend first, browser fallback', () {
+    late Directory tmp;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      tmp = Directory.systemTemp.createTempSync('anim92-test-');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async {
+          if (call.method == 'getApplicationDocumentsDirectory' ||
+              call.method == 'getTemporaryDirectory') {
+            return tmp.path;
+          }
+          return null;
+        },
+      );
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    AnimationEngine engineWith({
+      List<String>? opened,
+      List<Map<String, String>>? jobs,
+      TaskBackendRunner? runner,
+    }) {
+      final engine = AnimationEngine(
+        openBrowser: (url) async {
+          opened?.add(url);
+        },
+        sendVideoJob: (prompt, modelId, jobId) async {
+          jobs?.add(
+              {'prompt': prompt, 'model': modelId, 'jobId': jobId});
+        },
+        jobTimeout: const Duration(seconds: 5),
+        taskBackendRunner: runner,
+      );
+      addTearDown(engine.dispose);
+      return engine;
+    }
+
+    test('backend success: MP4 saved, browser never opens', () async {
+      final opened = <String>[];
+      final jobs = <Map<String, String>>[];
+      var runnerCalls = 0;
+      final engine = engineWith(
+        opened: opened,
+        jobs: jobs,
+        runner: (taskText, {required onPhase, required deadline}) async {
+          runnerCalls++;
+          expect(taskText, contains('1620x2880'));
+          onPhase('creating', 'Backend-e video banacche…');
+          return Uint8List.fromList([1, 2, 3, 4, 5]);
+        },
+      );
+      await engine.load();
+      expect(
+          await engine.start(
+              rawPrompt: 'golden phone charging',
+              modelId: 'neon',
+              signedIn: true),
+          isTrue);
+      await Future.delayed(const Duration(milliseconds: 300));
+      expect(runnerCalls, 1);
+      expect(opened, isEmpty);
+      expect(jobs, isEmpty);
+      expect(engine.phase, AnimationPhase.ready);
+      expect(engine.videos.length, 1);
+      expect(await File(engine.videos.first.localPath).length(), 5);
+      expect(engine.videos.first.width, 1620);
+      expect(engine.videos.first.height, 2880);
+    });
+
+    test('backend failure: falls back to the browser driver once',
+        () async {
+      final opened = <String>[];
+      final jobs = <Map<String, String>>[];
+      final engine = engineWith(
+        opened: opened,
+        jobs: jobs,
+        runner: (taskText, {required onPhase, required deadline}) async {
+          throw const TaskBackendException(
+              'channel', 'Conversation id asheni.');
+        },
+      );
+      await engine.load();
+      expect(
+          await engine.start(
+              rawPrompt: 'golden phone charging',
+              modelId: 'neon',
+              signedIn: true),
+          isTrue);
+      await Future.delayed(const Duration(milliseconds: 300));
+      expect(opened, ['https://gemini.google.com/app']);
+      expect(jobs.length, 1);
+      expect(jobs.first['model'], 'neon');
+      expect(engine.status, contains('Backend hoyni (channel)'));
+    });
+
+    test('taskMode off: backend never runs, browser opens directly',
+        () async {
+      final opened = <String>[];
+      final jobs = <Map<String, String>>[];
+      var runnerCalls = 0;
+      final engine = engineWith(
+        opened: opened,
+        jobs: jobs,
+        runner: (taskText, {required onPhase, required deadline}) async {
+          runnerCalls++;
+          return Uint8List(0);
+        },
+      );
+      await engine.load();
+      // load() restores the persisted Task switch (default on) —
+      // turn it off AFTER the load, like the user toggling it.
+      engine.taskMode = false;
+      expect(
+          await engine.start(
+              rawPrompt: 'golden phone charging',
+              modelId: 'neon',
+              signedIn: true),
+          isTrue);
+      expect(runnerCalls, 0);
+      expect(opened, ['https://gemini.google.com/app']);
+      expect(jobs.length, 1);
+    });
+
+    test('backend + browser both fail: error phase', () async {
+      final failing = AnimationEngine(
+        openBrowser: (_) async {
+          throw 'no browser';
+        },
+        sendVideoJob: (_, __, ___) async {},
+        jobTimeout: const Duration(seconds: 5),
+        taskBackendRunner:
+            (taskText, {required onPhase, required deadline}) async {
+          throw const TaskBackendException('setup', 'Setup jayni.');
+        },
+      );
+      addTearDown(failing.dispose);
+      await failing.load();
+      expect(
+          await failing.start(
+              rawPrompt: 'golden phone charging',
+              modelId: 'neon',
+              signedIn: true),
+          isTrue);
+      await Future.delayed(const Duration(milliseconds: 300));
+      expect(failing.phase, AnimationPhase.error);
+      expect(failing.status, contains('Browser khola jayni'));
     });
   });
 }

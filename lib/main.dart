@@ -31,7 +31,29 @@ import 'studio_constants.dart';
 import 'studio_engine.dart';
 import 'voice_prompt.dart';
 
-void main() {
+/// v93 — dark / light theme choice (persisted; dark is the
+/// default — the look the app has had since v49). The toggle in
+/// the app bar flips this; the MaterialApp below listens to it.
+const String kThemeModeKey = 'themeMode';
+final ValueNotifier<ThemeMode> themeModeNotifier =
+    ValueNotifier<ThemeMode>(ThemeMode.dark);
+
+Future<void> toggleTheme() async {
+  final next = themeModeNotifier.value == ThemeMode.dark
+      ? ThemeMode.light
+      : ThemeMode.dark;
+  themeModeNotifier.value = next;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(
+      kThemeModeKey, next == ThemeMode.light ? 'light' : 'dark');
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  themeModeNotifier.value = prefs.getString(kThemeModeKey) == 'light'
+      ? ThemeMode.light
+      : ThemeMode.dark;
   runApp(const GeminiHdStudioApp());
 }
 
@@ -60,7 +82,10 @@ const ColorScheme kDashboardScheme = ColorScheme(
   surfaceContainerLowest: Color(0xFF0E0F14),
   surfaceContainerLow: Color(0xFF121218),
   surfaceContainer: Color(0xFF17171F),
-  surfaceContainerHigh: Color(0xFF1E1E28),
+  // v93: was 0xFF1E1E28 — now the field fill (0xFF1B1B23) the
+  // Animation screen already used, so the theme role and the
+  // screens agree in both themes.
+  surfaceContainerHigh: Color(0xFF1B1B23),
   surfaceContainerHighest: Color(0xFF262633),
   onSurfaceVariant: Color(0xFFB6B3C9),
   outline: Color(0xFF3A3A4A),
@@ -68,6 +93,40 @@ const ColorScheme kDashboardScheme = ColorScheme(
   inverseSurface: Color(0xFFE8EBFF),
   onInverseSurface: Color(0xFF12172E),
   inversePrimary: Color(0xFF6E5FE0),
+);
+
+/// v93 — the light twin of [kDashboardScheme]: same lavender
+/// family, but light surfaces with a deeper violet primary so
+/// buttons and accents still read on white. Every screen draws
+/// its colours from the scheme (never hardcoded), so the toggle
+/// repaints the whole app.
+const ColorScheme kDashboardLightScheme = ColorScheme(
+  brightness: Brightness.light,
+  primary: Color(0xFF6C5CE7),
+  onPrimary: Colors.white,
+  primaryContainer: Color(0xFFE4DEFF),
+  onPrimaryContainer: Color(0xFF2E2566),
+  secondary: Color(0xFF7C6CF0),
+  onSecondary: Colors.white,
+  secondaryContainer: Color(0xFFEDEAFF),
+  onSecondaryContainer: Color(0xFF3A2E7A),
+  tertiary: Color(0xFFC2438B),
+  onTertiary: Colors.white,
+  error: Color(0xFFD32F2F),
+  onError: Colors.white,
+  surface: Color(0xFFFFFFFF),
+  onSurface: Color(0xFF17171F),
+  surfaceContainerLowest: Color(0xFFF5F3FF),
+  surfaceContainerLow: Color(0xFFF0EDFF),
+  surfaceContainer: Color(0xFFEDEAFF),
+  surfaceContainerHigh: Color(0xFFE6E0FF),
+  surfaceContainerHighest: Color(0xFFDDD6FE),
+  onSurfaceVariant: Color(0xFF5A5870),
+  outline: Color(0xFFB9B3D9),
+  outlineVariant: Color(0xFFE0DAF5),
+  inverseSurface: Color(0xFF1B1B23),
+  onInverseSurface: Color(0xFFF2F4FF),
+  inversePrimary: Color(0xFFA89CFE),
 );
 
 const LinearGradient kAccentGradient = LinearGradient(
@@ -118,26 +177,40 @@ class FadeSlideTransitionsBuilder extends PageTransitionsBuilder {
 class AuroraBackdrop extends StatelessWidget {
   const AuroraBackdrop({super.key});
 
+  /// v93 — the base follows the theme now (deep-space in dark,
+  /// pale lavender in light); the violet glows stay, softer in
+  /// light so they tint instead of glaring.
   @override
   Widget build(BuildContext context) {
-    return const Stack(
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Stack(
       fit: StackFit.expand,
       children: [
-        ColoredBox(color: Color(0xFF0E0F14)),
+        ColoredBox(
+            color: dark ? const Color(0xFF0E0F14) : const Color(0xFFF7F5FF)),
         Positioned(
           top: -130,
           left: -90,
-          child: _Glow(color: Color(0xFFA89CFE), size: 320, alpha: 0.13),
+          child: _Glow(
+              color: const Color(0xFFA89CFE),
+              size: 320,
+              alpha: dark ? 0.13 : 0.10),
         ),
         Positioned(
           top: 190,
           right: -120,
-          child: _Glow(color: Color(0xFF8F7BFF), size: 240, alpha: 0.07),
+          child: _Glow(
+              color: const Color(0xFF8F7BFF),
+              size: 240,
+              alpha: dark ? 0.07 : 0.06),
         ),
         Positioned(
           bottom: -150,
           right: -70,
-          child: _Glow(color: Color(0xFFA89CFE), size: 340, alpha: 0.08),
+          child: _Glow(
+              color: const Color(0xFFA89CFE),
+              size: 340,
+              alpha: dark ? 0.08 : 0.07),
         ),
       ],
     );
@@ -169,45 +242,51 @@ class _Glow extends StatelessWidget {
 }
 
 /// The app-wide theme (v34 Aurora Glass redesign), shared by
-/// the app shell and design previews.
-ThemeData buildStudioTheme() {
+/// the app shell and design previews. v93: [light] builds the
+/// light twin — same structure, the light scheme. The dark
+/// branch keeps the v49 values (a few roles now come from the
+/// scheme instead of literals, same numbers).
+ThemeData buildStudioTheme({bool light = false}) {
+  final scheme = light ? kDashboardLightScheme : kDashboardScheme;
   return ThemeData(
-        colorScheme: kDashboardScheme,
-        scaffoldBackgroundColor: const Color(0xFF0E0F14),
+        colorScheme: scheme,
+        scaffoldBackgroundColor:
+            light ? const Color(0xFFF7F5FF) : const Color(0xFF0E0F14),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF101016),
+        appBarTheme: AppBarTheme(
+          backgroundColor: scheme.surfaceContainerLow,
           elevation: 0,
           titleTextStyle: TextStyle(
-              fontSize: 19, fontWeight: FontWeight.w700, color: Colors.white),
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface),
         ),
         // CardThemeData (was CardTheme): Flutter 3.32+ split the
         // theme widget from its data class; ThemeData.cardTheme
         // takes the data class on the 3.35 toolchain.
         cardTheme: CardThemeData(
-          color: const Color(0xFF15151D),
+          color: scheme.surface,
           elevation: 0,
           shadowColor: Colors.black54,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Color(0xFF2A2A35)),
+            side: BorderSide(color: scheme.outlineVariant),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFF1B1B23),
+          fillColor: scheme.surfaceContainerHigh,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFF2A2A35)),
+            borderSide: BorderSide(color: scheme.outlineVariant),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFF2A2A35)),
+            borderSide: BorderSide(color: scheme.outlineVariant),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide:
-                const BorderSide(color: Color(0xFFA89CFE), width: 1.6),
+            borderSide: BorderSide(color: scheme.primary, width: 1.6),
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
@@ -221,44 +300,46 @@ ThemeData buildStudioTheme() {
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: Color(0xFF3A3A4A)),
+            side: BorderSide(color: scheme.outline),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14)),
           ),
         ),
         chipTheme: ChipThemeData(
-          backgroundColor: const Color(0xFF1A1A22),
-          selectedColor: const Color(0xFF37335F),
-          side: const BorderSide(color: Color(0xFF2A2A35)),
+          backgroundColor: scheme.surfaceContainer,
+          selectedColor: scheme.primaryContainer,
+          side: BorderSide(color: scheme.outlineVariant),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(999)),
           labelStyle:
               const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-          secondaryLabelStyle: const TextStyle(
+          secondaryLabelStyle: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,
-              color: Colors.white),
+              color: scheme.onSurface),
         ),
-        expansionTileTheme: const ExpansionTileThemeData(
-          shape: Border(),
-          collapsedShape: Border(),
-          iconColor: Color(0xFFA89CFE),
-          textColor: Colors.white,
+        expansionTileTheme: ExpansionTileThemeData(
+          shape: const Border(),
+          collapsedShape: const Border(),
+          iconColor: scheme.primary,
+          textColor: scheme.onSurface,
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          indicatorColor: const Color(0xFF37335F),
+          indicatorColor: scheme.primaryContainer,
           labelTextStyle: WidgetStateProperty.all(
               const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
         ),
-        navigationRailTheme: const NavigationRailThemeData(
-          backgroundColor: Color(0xFF101016),
-          indicatorColor: Color(0xFF37335F),
+        navigationRailTheme: NavigationRailThemeData(
+          backgroundColor: scheme.surfaceContainerLow,
+          indicatorColor: scheme.primaryContainer,
           selectedLabelTextStyle: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface),
           unselectedLabelTextStyle:
-              TextStyle(fontSize: 12, color: Color(0xFFB9C0D8)),
+              TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
@@ -276,11 +357,18 @@ class GeminiHdStudioApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Zedge Studio',
-      debugShowCheckedModeBanner: false,
-      theme: buildStudioTheme(),
-      home: const HomeScreen(),
+    // v93 — the theme toggle above flips this notifier; the
+    // whole app (dark + light ThemeData) rebuilds from it.
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeModeNotifier,
+      builder: (_, mode, __) => MaterialApp(
+        title: 'Zedge Studio',
+        debugShowCheckedModeBanner: false,
+        theme: buildStudioTheme(light: true),
+        darkTheme: buildStudioTheme(),
+        themeMode: mode,
+        home: const HomeScreen(),
+      ),
     );
   }
 }
@@ -414,6 +502,13 @@ class _HomeScreenState extends State<HomeScreen> {
       // v88: the video Prompt Polish runs on the same StudioEngine
       // Gemini session as the image Prompt Polish.
       promptPolisher: (prompt) => _engine.polishVideoPrompt(prompt),
+      // v92: the Task-mode video BACKEND (no browser) runs on the
+      // same StudioEngine Gemini session; any backend failure falls
+      // back to the browser driver inside the engine.
+      taskBackendRunner: (taskText,
+              {required onPhase, required deadline}) =>
+          _engine.runTaskVideoBackend(taskText,
+              onPhase: onPhase, deadline: deadline),
     );
     _animEngine.load();
     _animBrowserSub =
@@ -1085,14 +1180,14 @@ class _HomeScreenState extends State<HomeScreen> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
-          color: const Color(0xFF15151D),
-          border: Border.all(color: const Color(0xFF2A2A35)),
+          color: Theme.of(context).colorScheme.surface,
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
-            const Icon(Icons.nightlight_round,
-                size: 16, color: Color(0xFFA89CFE)),
+            Icon(Icons.nightlight_round,
+                size: 16, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Expanded(
                 child: Text(text, style: const TextStyle(fontSize: 12.5))),
@@ -1206,7 +1301,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final (icon, color) = switch (item.status) {
       'done' => (Icons.check_circle, const Color(0xFF4ADE80)),
       'failed' => (Icons.error_outline, const Color(0xFFF87171)),
-      'running' => (Icons.autorenew, const Color(0xFFA89CFE)),
+      'running' => (Icons.autorenew, Theme.of(context).colorScheme.primary),
       _ => (Icons.schedule, const Color(0xFF9A9AA5)),
     };
     return ListTile(
@@ -1499,7 +1594,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? Icons.radio_button_checked
                         : Icons.radio_button_unchecked,
                     size: 18,
-                    color: const Color(0xFFA89CFE),
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(width: 10),
                   Text(t == 'spread' ? 'Spread (Auto-Rotate)' : t),
@@ -1716,7 +1811,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 900;
     return Scaffold(
-      backgroundColor: const Color(0xFF0E0F14),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           const AuroraBackdrop(),
@@ -1779,9 +1874,9 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF12121A).withValues(alpha: 0.97),
+                  color: Theme.of(context).colorScheme.surfaceContainerLow.withValues(alpha: 0.97),
                   borderRadius: BorderRadius.circular(26),
-                  border: Border.all(color: const Color(0xFF2A2A35)),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                   boxShadow: const [
                     BoxShadow(
                         color: Colors.black54,
@@ -1861,6 +1956,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 3×48px icons + full version left the title column 67px wide
   /// for a 98.5px title).
   Widget _appBar(bool wide) {
+    final cs = Theme.of(context).colorScheme;
     final logoSize = wide ? 24.0 : 28.0;
     final titleSize = wide ? 14.0 : 16.0;
     final iconBox = wide ? 28.0 : 32.0;
@@ -1868,8 +1964,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       key: const ValueKey('appBar'),
       padding: EdgeInsets.fromLTRB(12, wide ? 6 : 8, 12, wide ? 6 : 8),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.white10)),
+      decoration: BoxDecoration(
+        border: Border(
+            bottom: BorderSide(color: cs.onSurface.withValues(alpha: 0.1))),
       ),
       child: Row(
         children: [
@@ -1894,12 +1991,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(
                         fontSize: titleSize,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white)),
+                        color: cs.onSurface)),
                 Text('Wallpaper Set Designer',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: wide ? 10 : 11, color: Colors.white60)),
+                        fontSize: wide ? 10 : 11,
+                        color: cs.onSurface.withValues(alpha: 0.6))),
               ],
             ),
           ),
@@ -1909,7 +2007,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 BoxConstraints(maxWidth: iconBox, maxHeight: iconBox),
             padding: EdgeInsets.zero,
             iconSize: iconSize,
-            color: Colors.white,
+            color: cs.onSurface,
             onPressed: _busy ? null : _importSet,
             icon: const Icon(Icons.folder_open_outlined),
           ),
@@ -1919,7 +2017,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 BoxConstraints(maxWidth: iconBox, maxHeight: iconBox),
             padding: EdgeInsets.zero,
             iconSize: iconSize,
-            color: Colors.white,
+            color: cs.onSurface,
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => PanelSettingsScreen(engine: _engine)));
@@ -1927,22 +2025,23 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.cloud_upload_outlined),
           ),
           const SizedBox(width: 8),
-          const Text('Version 2.5.23',
+          Text('Version 2.5.28',
               style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white38)),
+                  color: cs.onSurface.withValues(alpha: 0.38))),
         ],
       ),
     );
   }
 
   Widget _statChip(IconData icon, String label) {
+    final cs = Theme.of(context).colorScheme;
     return Chip(
-      avatar: Icon(icon, size: 14, color: kDashboardScheme.secondary),
+      avatar: Icon(icon, size: 14, color: cs.secondary),
       label: Text(label,
-          style: const TextStyle(fontSize: 11.5, color: Colors.white)),
-      backgroundColor: Colors.white.withValues(alpha: 0.13),
+          style: TextStyle(fontSize: 11.5, color: cs.onSurface)),
+      backgroundColor: cs.onSurface.withValues(alpha: 0.13),
       side: BorderSide.none,
       visualDensity: VisualDensity.compact,
     );
@@ -1955,6 +2054,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// status is inline now instead of a second row, so the strip
   /// is one row tall everywhere.
   Widget _accountStrip() {
+    final cs = Theme.of(context).colorScheme;
+    // v93 — theme toggle lives here, not in the app bar: the v83
+    // measurement showed a third app-bar icon squeezes the title
+    // to ~67px on a 360px phone. The strip's Expanded dropdown
+    // absorbs the 28px instead.
+    final isDark = themeModeNotifier.value == ThemeMode.dark;
     final connected = _sessionLabel != 'Not connected';
     final status = Row(
       mainAxisSize: MainAxisSize.min,
@@ -1973,7 +2078,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _sessionLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
+            style: TextStyle(
+                fontSize: 12, color: cs.onSurface.withValues(alpha: 0.7)),
           ),
         ),
       ],
@@ -1981,8 +2087,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       key: const ValueKey('accountStrip'),
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.white10)),
+      decoration: BoxDecoration(
+        border: Border(
+            bottom: BorderSide(color: cs.onSurface.withValues(alpha: 0.1))),
       ),
       child: Row(
         children: [
@@ -1992,9 +2099,9 @@ class _HomeScreenState extends State<HomeScreen> {
               isExpanded: true,
               isDense: true,
               underline: const SizedBox.shrink(),
-              dropdownColor: const Color(0xFF171F3D),
-              iconEnabledColor: Colors.white,
-              style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              dropdownColor: cs.surfaceContainer,
+              iconEnabledColor: cs.onSurface,
+              style: TextStyle(color: cs.onSurface, fontSize: 13.5),
               items: [
                 DropdownMenuItem(
                   value: 'auto',
@@ -2021,7 +2128,7 @@ class _HomeScreenState extends State<HomeScreen> {
           PopupMenuButton<String>(
             tooltip: 'Account actions',
             padding: EdgeInsets.zero,
-            color: const Color(0xFF171F3D),
+            color: cs.surfaceContainer,
             onSelected: (v) async {
               if (v == 'scan') {
                 if (!_busy) await _scanAccounts();
@@ -2066,12 +2173,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
-            child: const Tooltip(
+            child: Tooltip(
               message: 'Account actions',
               child: SizedBox(
                 width: 28,
                 height: 28,
-                child: Icon(Icons.more_vert, size: 18, color: Colors.white),
+                child: Icon(Icons.more_vert, size: 18, color: cs.onSurface),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: Tooltip(
+              message: isDark ? 'Light theme' : 'Dark theme',
+              child: InkWell(
+                key: const ValueKey('themeToggle'),
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => toggleTheme(),
+                child: Icon(
+                    isDark
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
+                    size: 18,
+                    color: cs.onSurface),
               ),
             ),
           ),
@@ -2112,8 +2238,8 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.queue_outlined,
-                  size: 16, color: Color(0xFFA89CFE)),
+              Icon(Icons.queue_outlined,
+                  size: 16, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 6),
               const Text('Batch queue',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
@@ -2228,12 +2354,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E2A),
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(11),
-                  border: Border.all(color: const Color(0xFF2A2A35)),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                 ),
-                child: const Icon(Icons.tune,
-                    size: 19, color: Color(0xFFC0B4FF)),
+                child: Icon(Icons.tune,
+                    size: 19, color: Theme.of(context).colorScheme.primary),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -2259,9 +2385,9 @@ class _HomeScreenState extends State<HomeScreen> {
               // Short label on purpose: the full "4.67 MP" text
               // squeezed the title to "Set …" at phone widths.
               Chip(
-                label: const Text('JPG · ≤8MB',
-                    style: TextStyle(fontSize: 11, color: Colors.white)),
-                backgroundColor: Colors.white.withValues(alpha: 0.10),
+                label: Text('JPG · ≤8MB',
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface)),
+                backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.10),
                 side: BorderSide.none,
                 visualDensity: VisualDensity.compact,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 2),

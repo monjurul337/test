@@ -17,6 +17,18 @@ const DOMAINS = new Set([".google.com", "google.com", "gemini.google.com", ".gem
 let port = null;
 const tabs = new Set();
 let basket = { srcs: [], v: 0, pages: 0 };
+// v89: a video job sent before any tab has connected (the browser
+// page is still loading — on a slow network that is minutes) was
+// silently dropped by toTabs() and the app waited the full 6 min
+// for a driver that never got the job. Queue it instead and
+// deliver it to the first Gemini tab that connects.
+let pendingVideo = null;
+function isGeminiTab(p) {
+  try {
+    const u = p.sender && p.sender.tab && p.sender.tab.url;
+    return !u || u.indexOf('gemini.google.com') !== -1;
+  } catch (e) { return true; }
+}
 
 function toTabs(m) {
   for (const t of tabs) {
@@ -63,7 +75,16 @@ function fromApp(msg) {
       break;
     case "status": toTabs({ type: "status", src: msg.src, state: msg.state, message: msg.message || "" }); break;
     case "toast": toTabs({ type: "toast", msg: msg.msg || "" }); break;
-    case "video": toTabs({ type: "video", prompt: msg.prompt, model: msg.model, jobId: msg.jobId }); break;
+    case "video":
+      // v89: queue when no tab is connected yet (page still
+      // loading) — dropping the job made the app time out with
+      // no driver ever running.
+      if (tabs.size === 0) {
+        pendingVideo = msg;
+      } else {
+        toTabs({ type: "video", prompt: msg.prompt, model: msg.model, jobId: msg.jobId });
+      }
+      break;
   }
 }
 
@@ -71,6 +92,11 @@ browser.runtime.onConnect.addListener((p) => {
   if (p.name !== "ais-tab") return;
   tabs.add(p);
   p.postMessage({ type: "basket", srcs: basket.srcs, v: basket.v, pages: basket.pages });
+  // v89: deliver a queued video job to the first Gemini tab.
+  if (pendingVideo && isGeminiTab(p)) {
+    try { p.postMessage({ type: "video", prompt: pendingVideo.prompt, model: pendingVideo.model, jobId: pendingVideo.jobId }); } catch (e) {}
+    pendingVideo = null;
+  }
   p.onMessage.addListener((m) => {
     if (m && m.type === "q" && port) port.postMessage(m);
   });

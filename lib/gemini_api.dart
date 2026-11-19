@@ -28,6 +28,7 @@ import 'package:http/http.dart' as http;
 import 'models.dart';
 import 'session_store.dart';
 import 'studio_constants.dart';
+import 'task_backend.dart';
 
 class GeminiAttachment {
   final String uploadPath;
@@ -328,6 +329,11 @@ class GeminiApi {
         RegExp(r'"cfb2h":"([^"]+)"').firstMatch(html)?.group(1) ?? defaultBl;
     final fSid = RegExp(r'"FdrFJe":"([^"]+)"').firstMatch(html)?.group(1) ?? '';
     final email = extractEmailFromHtml(html);
+    // v92 — Task backend: the signaler API key (one of the AIza keys
+    // in the page) and the X-Server-Token (page key "PI9WOb") are
+    // read from the same HTML, exactly like SNlM0e — never hardcoded.
+    final serverToken =
+        RegExp(r'"PI9WOb":"([^"]+)"').firstMatch(html)?.group(1) ?? '';
     return GeminiSession(
       authUser: authUser,
       email: email.isEmpty ? 'Account u/$authUser' : email,
@@ -336,6 +342,8 @@ class GeminiApi {
       fSid: fSid,
       cookieHeader: cookieHeader,
       fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+      apiKeys: extractApiKeys(html),
+      serverToken: serverToken,
     );
   }
 

@@ -68,20 +68,20 @@ jobs:
         run: flutter build apk --release --target-platform android-arm64
 
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk ZedgeStudio-2.5.23-release.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk ZedgeStudio-2.5.28-release.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: gemini-hd-studio-android-apk
-          path: ZedgeStudio-2.5.23-release.apk
+          path: ZedgeStudio-2.5.28-release.apk
           retention-days: 90
 
       - name: Publish APK to Release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ZedgeStudio-2.5.23-release.apk
+          files: ZedgeStudio-2.5.28-release.apk
 
   build-windows:
     name: Windows App + Setup .exe
@@ -91,8 +91,8 @@ jobs:
     # (source app-o tai use kore). windows-2022-te VS 2022 ache.
     runs-on: windows-2022
     steps:
-      - name: Workflow version (v88)
-        run: echo "WORKFLOW FILE VERSION = v88 (Version 2.5.23 label, Animation section - duration + style mood + seamless + prompt polish + copyright guard)"
+      - name: Workflow version (v93)
+        run: echo "WORKFLOW FILE VERSION = v93 (Version 2.5.28 label, Animation bulk generate + dark-light theme toggle)"
 
       - name: Checkout
         uses: actions/checkout@v4

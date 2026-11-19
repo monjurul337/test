@@ -34,6 +34,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
@@ -44,6 +45,7 @@ import 'animation_models.dart';
 import 'foreground_keep_alive.dart';
 import 'gecko_browser.dart';
 import 'models.dart';
+import 'task_backend.dart';
 
 /// Where the finished videos live on the device, and where the
 /// video list + Task-mode choice are persisted.
@@ -95,6 +97,16 @@ typedef VideoPanelUploader = Future<
 /// Gemini session). Null in tests that do not provide it.
 typedef VideoPromptPolisher = Future<String> Function(String prompt);
 
+/// v92 — injected by the app: the Task-mode video BACKEND (no
+/// browser). Returns the finished MP4 bytes, or throws
+/// [TaskBackendException] naming the failed step. Null in tests and
+/// in builds without a backend — the browser driver runs instead.
+typedef TaskBackendRunner = Future<Uint8List> Function(
+  String taskText, {
+  required void Function(String phase, String message) onPhase,
+  required DateTime deadline,
+});
+
 Future<void> _defaultOpenBrowser(String url) =>
     GeckoBrowser.instance.open(url);
 
@@ -107,10 +119,11 @@ class AnimationEngine {
     OpenBrowser? openBrowser,
     SendVideoJob? sendVideoJob,
     http.Client? httpClient,
-    Duration jobTimeout = const Duration(minutes: 6),
+    Duration jobTimeout = const Duration(minutes: 9),
     VideoMetadataGenerator? metadataGenerator,
     VideoPanelUploader? panelUploader,
     VideoPromptPolisher? promptPolisher,
+    TaskBackendRunner? taskBackendRunner,
     this.onChanged,
   })  : _openBrowser = openBrowser ?? _defaultOpenBrowser,
         _sendVideoJob = sendVideoJob ?? _defaultSendVideoJob,
@@ -118,15 +131,23 @@ class AnimationEngine {
         _jobTimeout = jobTimeout,
         _metadataGenerator = metadataGenerator,
         _panelUploader = panelUploader,
-        _promptPolisher = promptPolisher;
+        _promptPolisher = promptPolisher,
+        _taskBackendRunner = taskBackendRunner;
 
   final OpenBrowser _openBrowser;
   final SendVideoJob _sendVideoJob;
   final http.Client? _httpClient;
   final Duration _jobTimeout;
+  // v89: last driver phase + when it last reported, so a timeout
+  // can say WHERE the job died instead of a blind "time out".
+  // (v88: the user got only the blind message after 6 min — the
+  // job had never even reached the driver.)
+  String _lastDriverPhase = '';
+  DateTime? _lastProgressAt;
   final VideoMetadataGenerator? _metadataGenerator;
   final VideoPanelUploader? _panelUploader;
   final VideoPromptPolisher? _promptPolisher;
+  final TaskBackendRunner? _taskBackendRunner;
 
   List<AnimationVideo> videos = [];
   AnimationPhase phase = AnimationPhase.idle;
@@ -151,6 +172,22 @@ class AnimationEngine {
   String selectedStyleId = kDefaultAnimationMoodId;
   int selectedDurationSec = kDefaultAnimationDurationSec;
   bool seamlessMode = kDefaultAnimationSeamless;
+
+  /// v93 — bulk queue: prompts waiting to be generated one after
+  /// another, plus the run state. The queue is in-memory only.
+  List<BulkQueueItem> bulkQueue = [];
+  bool bulkRunning = false;
+  bool _cancelBulk = false;
+
+  /// v93 — completes when the current job ends (true = video
+  /// saved, false = it failed), so the bulk loop can await one
+  /// job without polling.
+  Completer<bool>? _jobDone;
+
+  void _completeJob(bool ok) {
+    final c = _jobDone;
+    if (c != null && !c.isCompleted) c.complete(ok);
+  }
 
   /// Called after every state change so the screen can setState.
   void Function()? onChanged;
@@ -330,19 +367,31 @@ class AnimationEngine {
     currentPrompt = rawPrompt.trim();
     currentModelId = model.id;
     currentJobId = DateTime.now().millisecondsSinceEpoch.toString();
+    _lastDriverPhase = '';
+    _lastProgressAt = null;
     _setPhase(AnimationPhase.opening);
     _jobTimer?.cancel();
     _jobTimer = Timer(_jobTimeout, () {
       if (busy && currentJobId.isNotEmpty) {
-        _setPhase(AnimationPhase.error,
-            'time out — Gemini theke kono video asheni, abar try koro.');
+        _setPhase(AnimationPhase.error, _timeoutMessage());
         currentJobId = '';
+        _completeJob(false);
       }
     });
+    // v93 — the bulk loop awaits this; every job end completes it.
+    _jobDone = Completer<bool>();
     try {
       if (taskMode) {
         await ForegroundKeepAlive.acquire(
             'Making animation in the background — safe to switch apps');
+      }
+      // v92 — backend FIRST when Task mode is on: the video comes
+      // through the Task channel + hNvQHb poll with no browser at
+      // all. The backend runs async (same job id, same timeout);
+      // any backend failure falls back to the browser driver once.
+      if (taskMode && _taskBackendRunner != null) {
+        unawaited(_runBackend(prompt));
+        return true;
       }
       await _openBrowser(kGeminiChatUrl);
       await _sendVideoJob(prompt, model.id, currentJobId);
@@ -351,9 +400,191 @@ class AnimationEngine {
       if (taskMode) ForegroundKeepAlive.release();
       _setPhase(AnimationPhase.error, 'Browser khola jayni: $e');
       currentJobId = '';
+      _completeJob(false);
       return false;
     }
     return true;
+  }
+
+  /// v93 — bulk queue management (UI-side; no generation here).
+  void addBulkPrompts(List<String> prompts) {
+    var n = 0;
+    for (final p in prompts) {
+      final text = p.trim();
+      if (text.isEmpty) continue;
+      bulkQueue.add(BulkQueueItem(
+        id: '${DateTime.now().millisecondsSinceEpoch}_$n',
+        rawPrompt: text,
+      ));
+      n++;
+    }
+    if (n > 0) _emit();
+  }
+
+  void removeBulkItem(String id) {
+    if (bulkRunning) return;
+    bulkQueue.removeWhere((i) => i.id == id);
+    _emit();
+  }
+
+  void clearBulkQueue() {
+    if (bulkRunning) return;
+    bulkQueue.clear();
+    _emit();
+  }
+
+  int get bulkDoneCount =>
+      bulkQueue.where((i) => i.status == BulkItemStatus.done).length;
+  int get bulkFailedCount =>
+      bulkQueue.where((i) => i.status == BulkItemStatus.failed).length;
+
+  /// One-line bulk progress for the status area.
+  String get bulkStatus {
+    if (bulkQueue.isEmpty) return '';
+    final done = bulkDoneCount;
+    final failed = bulkFailedCount;
+    final total = bulkQueue.length;
+    if (!bulkRunning && done + failed == total && total > 0) {
+      return 'Bulk sesh: $done/$total ready${failed > 0 ? ' · $failed hoyni' : ' ✓'}';
+    }
+    return 'Bulk: $done/$total ready${failed > 0 ? ' · $failed failed' : ''}${bulkRunning ? '…' : ''}';
+  }
+
+  /// v93 — runs the whole bulk queue, one item after another,
+  /// through the same start() as a single generation (backend
+  /// first in Task mode, browser fallback inside). Returns false
+  /// when it cannot start (empty queue, already running, a job
+  /// already busy, not signed in) — [status] says why.
+  Future<bool> startBulk({required bool signedIn}) async {
+    if (bulkRunning) {
+      status = 'Bulk already cholche.';
+      _emit();
+      return false;
+    }
+    if (bulkQueue.isEmpty) {
+      status = 'Bulk queue khali — age prompt dao.';
+      _emit();
+      return false;
+    }
+    if (busy) {
+      status = 'Ekta animation cholche — sesh hok, tarpor bulk cholbe.';
+      _emit();
+      return false;
+    }
+    if (!signedIn) {
+      _setPhase(AnimationPhase.error,
+          'Age Gemini-te sign in koro (Login tab).');
+      return false;
+    }
+    bulkRunning = true;
+    _cancelBulk = false;
+    _emit();
+    var cancelled = false;
+    for (final item in bulkQueue) {
+      if (_cancelBulk) {
+        cancelled = true;
+        break;
+      }
+      if (item.status == BulkItemStatus.done) continue;
+      item.status = BulkItemStatus.running;
+      item.error = '';
+      _emit();
+      final started = await start(
+        rawPrompt: item.rawPrompt,
+        modelId: selectedModelId,
+        signedIn: signedIn,
+      );
+      if (!started) {
+        item.status = BulkItemStatus.failed;
+        item.error = status;
+        _emit();
+        continue;
+      }
+      final ok = await _jobDone?.future ?? false;
+      if (item.status == BulkItemStatus.running) {
+        item.status = ok ? BulkItemStatus.done : BulkItemStatus.failed;
+        if (!ok) item.error = status;
+      }
+      _emit();
+    }
+    bulkRunning = false;
+    _cancelBulk = false;
+    final done = bulkDoneCount;
+    final failed = bulkFailedCount;
+    status = cancelled
+        ? 'Bulk thamano hoyeche: $done ready, $failed failed.'
+        : 'Bulk sesh: $done/${bulkQueue.length} ready${failed > 0 ? ', $failed hoyni.' : ' ✓'}';
+    if (done > 0 && taskMode) {
+      await ForegroundKeepAlive.notifyDone(
+          'Bulk animations ready', '$done video ready hoye geche.');
+    }
+    _emit();
+    return true;
+  }
+
+  /// v93 — stops the bulk run after the current video finishes
+  /// (the driver has no safe mid-job cancel — the running video
+  /// is left to land or fail on its own).
+  void cancelBulk() {
+    if (!bulkRunning) return;
+    _cancelBulk = true;
+    status = 'Bulk thambe — ekhonkar video sesh hole.';
+    _emit();
+  }
+
+  /// v92 — runs the Task backend and finishes with its MP4 bytes;
+  /// on any backend failure falls back to the browser driver once
+  /// (same job id, same timeout) so the video still gets made.
+  Future<void> _runBackend(String prompt) async {
+    final jobId = currentJobId;
+    final deadline = DateTime.now().add(_jobTimeout);
+    try {
+      final bytes = await _taskBackendRunner!(
+        prompt,
+        onPhase: _applyBackendPhase,
+        deadline: deadline,
+      );
+      if (currentJobId != jobId || jobId.isEmpty) return;
+      await _finishBytes(bytes,
+          durationSec: selectedDurationSec.toDouble());
+    } catch (e) {
+      if (currentJobId != jobId || jobId.isEmpty) return;
+      final step = e is TaskBackendException ? e.step : 'backend';
+      status = 'Backend hoyni ($step) — browser diye cholche…';
+      _emit();
+      try {
+        await _openBrowser(kGeminiChatUrl);
+        await _sendVideoJob(prompt, currentModelId, jobId);
+      } catch (err) {
+        _jobTimer?.cancel();
+        if (taskMode) ForegroundKeepAlive.release();
+        _setPhase(AnimationPhase.error, 'Browser khola jayni: $err');
+        currentJobId = '';
+        _completeJob(false);
+      }
+    }
+  }
+
+  /// v92 — backend progress lines reuse the driver phases (the
+  /// status text carries the live detail).
+  void _applyBackendPhase(String phase, String message) {
+    _lastDriverPhase =
+        phase == 'downloading' ? 'downloading' : phase;
+    _lastProgressAt = DateTime.now();
+    switch (phase) {
+      case 'opening':
+        _setPhase(AnimationPhase.opening);
+        break;
+      case 'downloading':
+        _setPhase(AnimationPhase.downloading);
+        break;
+      default:
+        _setPhase(AnimationPhase.creating);
+    }
+    if (message.isNotEmpty) {
+      status = message;
+      _emit();
+    }
   }
 
   /// Routes one `browserRequest` from the in-page driver. Returns
@@ -385,12 +616,40 @@ class AnimationEngine {
         ].join(' ').trim();
         _setPhase(AnimationPhase.error, detail);
         currentJobId = '';
+        _completeJob(false);
         return true;
     }
     return false;
   }
 
+  /// v89: what the timeout reports — the last driver step and how
+  /// long it has been quiet, so one live-test report names the
+  /// exact stuck step instead of a blind "time out".
+  String _timeoutMessage() {
+    const labels = {
+      'opening': 'Gemini khulche',
+      'task_mode': 'Task mode-e cholche',
+      'selecting_model': 'model select hocche',
+      'opening_tool': 'video tool khulche',
+      'typing': 'prompt likhche',
+      'creating': 'video banacche',
+      'downloading': 'MP4 download hocche',
+    };
+    if (_lastDriverPhase.isEmpty) {
+      return 'time out — driver-er sathe kono jogajog hoyni '
+          '(browser-e Gemini page khulchilo?). Abar try koro.';
+    }
+    final label = labels[_lastDriverPhase] ?? _lastDriverPhase;
+    final quiet = _lastProgressAt == null
+        ? ''
+        : ' (${DateTime.now().difference(_lastProgressAt!).inSeconds}s dhore kono khobor nai)';
+    return 'time out — sesh step: $label$quiet. '
+        'Gemini theke kono video asheni, abar try koro.';
+  }
+
   void _applyDriverPhase(String driverPhase, String message) {
+    _lastDriverPhase = driverPhase;
+    _lastProgressAt = DateTime.now();
     switch (driverPhase) {
       case 'opening':
         _setPhase(AnimationPhase.opening);
@@ -415,14 +674,11 @@ class AnimationEngine {
   Future<void> _finishReady(AnimationVideoEvent ev) async {
     _setPhase(AnimationPhase.downloading);
     try {
-      final dir = await videosDir();
-      final id = DateTime.now().millisecondsSinceEpoch.toString();
-      final fileName = 'anim_$id.mp4';
-      final file = File('${dir.path}/$fileName');
+      final Uint8List bytes;
       if (ev.dataUrl.isNotEmpty) {
         final comma = ev.dataUrl.indexOf(',');
         final b64 = comma >= 0 ? ev.dataUrl.substring(comma + 1) : ev.dataUrl;
-        await file.writeAsBytes(base64Decode(b64));
+        bytes = base64Decode(b64);
       } else if (ev.url.isNotEmpty) {
         final client = _httpClient ?? http.Client();
         try {
@@ -432,7 +688,7 @@ class AnimationEngine {
           if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
             throw 'Download failed: HTTP ${res.statusCode}';
           }
-          await file.writeAsBytes(res.bodyBytes);
+          bytes = res.bodyBytes;
         } finally {
           if (_httpClient == null) {
             client.close();
@@ -441,39 +697,59 @@ class AnimationEngine {
       } else {
         throw 'Gemini video-r URL deyni.';
       }
-      final size = await file.length();
-      final title = _titleFor(currentPrompt);
-      final video = AnimationVideo(
-        id: id,
-        title: title,
-        prompt: currentPrompt,
-        modelId: currentModelId,
-        styleId: selectedStyleId,
-        requestedDurationSec: selectedDurationSec,
-        localPath: file.path,
-        fileName: fileName,
-        width: ev.width,
-        height: ev.height,
-        durationSec: ev.durationSec,
-        sizeBytes: size,
-        createdAt: DateTime.now(),
-      );
-      videos = [video, ...videos];
-      await _save();
-      _jobTimer?.cancel();
-      if (taskMode) {
-        ForegroundKeepAlive.release();
-        await ForegroundKeepAlive.notifyDone(
-            'Animation ready', '"$title" download hoye geche.');
-      }
-      currentJobId = '';
-      _setPhase(AnimationPhase.ready);
+      await _finishBytes(bytes,
+          width: ev.width, height: ev.height, durationSec: ev.durationSec);
     } catch (e) {
       _jobTimer?.cancel();
       if (taskMode) ForegroundKeepAlive.release();
       currentJobId = '';
       _setPhase(AnimationPhase.error, e.toString());
+      _completeJob(false);
     }
+  }
+
+  /// Shared save path for the driver (video bytes from the page) and
+  /// the v92 backend (MP4 bytes from the channel). The backend does
+  /// not know the detected size/duration, so it passes the requested
+  /// ones as the estimate (width/height default to the 1620x2880
+  /// Zedge spec).
+  Future<void> _finishBytes(Uint8List bytes,
+      {int width = 1620,
+      int height = 2880,
+      double durationSec = 0}) async {
+    final dir = await videosDir();
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final fileName = 'anim_$id.mp4';
+    final file = File('${dir.path}/$fileName');
+    await file.writeAsBytes(bytes);
+    final size = await file.length();
+    final title = _titleFor(currentPrompt);
+    final video = AnimationVideo(
+      id: id,
+      title: title,
+      prompt: currentPrompt,
+      modelId: currentModelId,
+      styleId: selectedStyleId,
+      requestedDurationSec: selectedDurationSec,
+      localPath: file.path,
+      fileName: fileName,
+      width: width,
+      height: height,
+      durationSec: durationSec,
+      sizeBytes: size,
+      createdAt: DateTime.now(),
+    );
+    videos = [video, ...videos];
+    await _save();
+    _jobTimer?.cancel();
+    if (taskMode) {
+      ForegroundKeepAlive.release();
+      await ForegroundKeepAlive.notifyDone(
+          'Animation ready', '"$title" download hoye geche.');
+    }
+    currentJobId = '';
+    _setPhase(AnimationPhase.ready);
+    _completeJob(true);
   }
 
   String _titleFor(String prompt) {
@@ -629,5 +905,6 @@ class AnimationEngine {
 
   void dispose() {
     _jobTimer?.cancel();
+    _completeJob(false);
   }
 }

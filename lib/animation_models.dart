@@ -428,6 +428,54 @@ enum AnimationPhase {
   error,
 }
 
+/// v93 — one item of the Animation bulk queue: a raw prompt plus
+/// its run state. The queue runs one item after another through
+/// the same [AnimationEngine.start] as a single generation, so a
+/// bulk run of five takes up to five job timeouts in the
+/// background — each finished video is saved to the gallery as it
+/// lands, and the queue itself is in-memory only (a killed app
+/// loses the waiting items, never the finished videos).
+enum BulkItemStatus { queued, running, done, failed }
+
+class BulkQueueItem {
+  final String id;
+  final String rawPrompt;
+  BulkItemStatus status;
+  String error;
+
+  BulkQueueItem({
+    required this.id,
+    required this.rawPrompt,
+    this.status = BulkItemStatus.queued,
+    this.error = '',
+  });
+
+  String get shortPrompt => rawPrompt.length <= 60
+      ? rawPrompt
+      : '${rawPrompt.substring(0, 60)}…';
+
+  String get statusText {
+    switch (status) {
+      case BulkItemStatus.queued:
+        return 'Waiting';
+      case BulkItemStatus.running:
+        return 'Banacche…';
+      case BulkItemStatus.done:
+        return 'Ready ✓';
+      case BulkItemStatus.failed:
+        return error.isEmpty ? 'Hoyni' : 'Hoyni: $error';
+    }
+  }
+}
+
+/// One prompt per line, like the image batch queue — blank lines
+/// are dropped, the rest become bulk items in order.
+List<String> parseBulkPrompts(String text) => text
+    .split('\n')
+    .map((e) => e.trim())
+    .where((e) => e.isNotEmpty)
+    .toList();
+
 /// One event from the in-page video driver, carried over the same
 /// `browserRequest` channel as the picture overlay (action
 /// 'video_progress' | 'video_ready' | 'video_error', payload in

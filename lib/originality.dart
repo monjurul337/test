@@ -1037,7 +1037,7 @@ class _OriginalityCheckScreenState extends State<OriginalityCheckScreen> {
               child: LinearProgressIndicator(
                 value: value / 100,
                 minHeight: 5,
-                backgroundColor: Colors.white10,
+                backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
                 color: color,
               ),
             ),
@@ -1240,7 +1240,14 @@ class _Gauge extends StatelessWidget {
         children: [
           CustomPaint(
             size: const Size(118, 118),
-            painter: _GaugePainter(creative / 100, color),
+            painter: _GaugePainter(
+              creative / 100,
+              color,
+              Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.1),
+            ),
           ),
           Column(
             mainAxisSize: MainAxisSize.min,
@@ -1261,14 +1268,16 @@ class _Gauge extends StatelessWidget {
 class _GaugePainter extends CustomPainter {
   final double fraction;
   final Color color;
-  _GaugePainter(this.fraction, this.color);
+  final Color trackColor;
+
+  _GaugePainter(this.fraction, this.color, [this.trackColor = Colors.white10]);
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 6;
     final bg = Paint()
-      ..color = Colors.white10
+      ..color = trackColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 9;
     canvas.drawCircle(center, radius, bg);

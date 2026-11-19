@@ -728,8 +728,8 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.check_circle,
-                    size: 24, color: Color(0xFFA89CFE)),
+                Icon(Icons.check_circle,
+                    size: 24, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1353,11 +1353,11 @@ class _ImageSearchHomeState extends State<ImageSearchScreen> {
                   // v59: the source group gets a caption, and the
                   // source chips sit in one horizontal swipe row
                   // (the old Wrap spilled into three ragged rows).
-                  const Text('SOURCE',
+                  Text('SOURCE',
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white54,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                           letterSpacing: 1.2)),
                   const SizedBox(height: 6),
                   Container(
@@ -2383,11 +2383,11 @@ class _ImageActionSheetState extends State<_ImageActionSheet> {
                 ],
               ),
               const SizedBox(height: 14),
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.auto_awesome, size: 16, color: Color(0xFFA89CFE)),
-                  SizedBox(width: 6),
-                  Text('Image to Prompt',
+                  Icon(Icons.auto_awesome, size: 16, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 6),
+                  const Text('Image to Prompt',
                       style: TextStyle(
                           fontWeight: FontWeight.w700, fontSize: 14)),
                 ],
@@ -2693,8 +2693,8 @@ class _BatchPromptSheetState extends State<_BatchPromptSheet> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.auto_awesome,
-                      size: 18, color: Color(0xFFA89CFE)),
+                  Icon(Icons.auto_awesome,
+                      size: 18, color: Theme.of(context).colorScheme.primary),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(

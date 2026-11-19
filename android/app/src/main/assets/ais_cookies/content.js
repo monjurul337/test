@@ -644,6 +644,14 @@ window.__aisTouchUI = true;
 // opens the web chat's "Create video" tool, sends the prompt, waits
 // for the finished video, and reports back over the same 'q'
 // channel as the picture overlay:
+// v90: Task mode is PRIMARY (user live-tested: Task mode makes
+// video) — the driver switches the Chat | Task toggle on, skips the
+// model pick + tool open (the task agent decides), and waits up to
+// 5.5 min. Chat flow survives as a fallback when no Task toggle
+// is found.
+// v91: Task mode-e size PROTHOME likhte hobe — na likhle agent
+// Veo default 16:9 landscape banay. Task text leads with
+// "Video size 1620x2880, 9:16 vertical."
 //   {action:'video_progress', data:{phase, jobId, message}}
 //   {action:'video_ready', data:{url|dataUrl, durationSec, width, height, jobId}}
 //   {action:'video_error', data:{step, message, buttons, jobId}}
@@ -692,6 +700,50 @@ window.__aisTouchUI = true;
     const ns = needles.map((n) => norm(n));
     return btns().find((b) => { const t = norm(textOf(b)); return ns.some((n) => t.includes(n)); }) || null;
   };
+  // v90: exact visible-text match — the Chat | Task toggle pill
+  // says exactly "Task"; substring matching would also catch
+  // "Tasks", "Task settings", "Describe a task", etc.
+  const findBtnExact = (label) => {
+    const n = norm(label);
+    return btns().find((b) => norm((b.textContent || '').replace(/\s+/g, ' ').trim()) === n) || null;
+  };
+  // v90: is Gemini Task mode on? The selected pill (aria-pressed /
+  // selected / active class) or the composer placeholder saying
+  // "Describe a task" (Chat mode says "Ask Gemini").
+  function taskModeOn() {
+    try {
+      const pill = findBtnExact('Task');
+      if (pill) {
+        const ap = (pill.getAttribute('aria-pressed') || '') + ' ' + (pill.getAttribute('aria-selected') || '');
+        if (/true/i.test(ap)) return true;
+        if (/(selected|active|checked)/i.test((pill.className || '').toString())) return true;
+      }
+      const eds = [...document.querySelectorAll('div[contenteditable="true"], textarea')].filter(visible);
+      return eds.some((el) => {
+        const ph = (el.getAttribute('placeholder') || '') + ' ' + (el.getAttribute('data-placeholder') || '') + ' ' + (el.getAttribute('aria-label') || '');
+        return /task/i.test(ph);
+      });
+    } catch (e) { return false; }
+  }
+  // v90: make sure Task mode is on. Returns true when on (or when
+  // the Task pill was clicked — a segmented control does not no-op
+  // on its inactive option, so the click means the mode switched
+  // even if the page gives no detectable confirmation). Returns
+  // false only when no Task toggle exists at all.
+  async function ensureTaskMode() {
+    try {
+      if (taskModeOn()) return true;
+      const pill = findBtnExact('Task');
+      if (!pill) return false;
+      pill.click();
+      const end = Date.now() + 10000;
+      while (Date.now() < end) {
+        if (taskModeOn()) return true;
+        await sleep(500);
+      }
+      return true;
+    } catch (e) { return false; }
+  }
   const dumpButtons = () => btns().slice(0, 30).map((b) => textOf(b).slice(0, 40)).filter(Boolean).join(' | ');
   async function waitFor(fn, ms, label) {
     const end = Date.now() + ms;
@@ -724,62 +776,95 @@ window.__aisTouchUI = true;
     if (running) { fail(jobId, 'busy', 'Ekta animation already cholche.'); return; }
     running = jobId;
     try {
-      // 1. Chat UI ready (or sign-in wall).
+      // 1. Chat UI ready (or sign-in wall). v89: 60s, not 30s — on a
+      // slow network (9 KB/s seen live) the Gemini page alone can
+      // take a minute to load.
       progress(jobId, 'opening', '');
       await waitFor(() => {
         if (findBtn(['Sign in', 'Log in'])) throw new Error('__signin__');
         return document.querySelector('div[contenteditable="true"], textarea') ||
           findBtn(['Gemini', 'Auto', 'Hydrogen', 'Neon', 'Carbon']);
-      }, 30000, 'Gemini chat khulche na — net / login check koro.');
-      // 2. Model picker: skip when the wanted model is already on.
-      progress(jobId, 'selecting_model', '');
-      const want = MODEL_MATCH[model] || MODEL_MATCH.neon;
-      const picker = findBtn(['Gemini', 'Auto', 'Hydrogen', 'Neon', 'Carbon', 'Deeper analysis', 'Everyday help', 'Code & complex work']);
-      const pickerText = picker ? norm(textOf(picker)) : '';
-      const already = want.some((w) => pickerText.includes(norm(w)));
-      if (picker && !already) {
-        picker.click();
-        await sleep(900);
-        const opt = await waitFor(() => findBtn(want), 15000, 'Model list-e ' + want[0] + ' pelam na.');
-        opt.click();
-        await sleep(900);
-      }
-      // 3. Open the "Create video" tool.
-      progress(jobId, 'opening_tool', '');
-      let tool = findBtn(['Create video']);
-      if (!tool) {
-        const toolsBtn = findBtn(['Tools', 'More options', 'More tools']);
-        if (toolsBtn) {
-          toolsBtn.click();
+      }, 60000, 'Gemini chat khulche na — net / login check koro.');
+      // 2. v90: Task mode (primary) — user live-tested: Task mode-e
+      // video hoy. Toggle-ta composer-er niche Chat | Task. Already
+      // on thakle skip; toggle na pele Chat flow-e fallback (v89
+      // steps) — generation bondho hobe na, status-e janiye dibe.
+      // Task mode-e model pick + tool open lage na: the task agent
+      // picks its own model + tool from the description.
+      progress(jobId, 'task_mode', 'Task mode khulche…');
+      const inTask = await ensureTaskMode();
+      // v91: Task mode-e video size PROTHOME likhte hobe (user order)
+      // — na likhle agent Veo default 16:9 landscape banay. The
+      // built prompt already carries the size in its spec suffix,
+      // but the agent reads the lead first, so it goes first here.
+      let sendText = prompt;
+      if (inTask) {
+        progress(jobId, 'task_mode', 'Task mode-e video banacche…');
+        sendText = 'Video size 1620x2880, 9:16 vertical. ' + prompt;
+      } else {
+        progress(jobId, 'selecting_model', 'Task toggle pelam na — Chat diye cholche');
+        // v89 Chat fallback: model picker — the WEB chat has no
+        // "Neon" model (those labels are the mobile app's). Only
+        // switch when the exact wanted option is actually offered;
+        // NEVER fail the job here — the video tool (Veo) picks its
+        // own model. (v86 failed the whole job after 15s when the
+        // web menu had no Neon entry.)
+        const want = MODEL_MATCH[model] || MODEL_MATCH.neon;
+        const picker = findBtn(['Gemini', 'Auto', 'Hydrogen', 'Neon', 'Carbon', 'Deeper analysis', 'Everyday help', 'Code & complex work']);
+        const pickerText = picker ? norm(textOf(picker)) : '';
+        const already = want.some((w) => pickerText.includes(norm(w)));
+        if (picker && !already) {
+          picker.click();
           await sleep(900);
-          tool = findBtn(['Create video']);
+          const opt = findBtn(want);
+          if (opt) {
+            opt.click();
+            await sleep(900);
+          } else {
+            // Web menu has no such model — close it and continue to
+            // the video tool instead of failing the job.
+            progress(jobId, 'selecting_model', 'Model web-e alada — video tool diye cholche');
+            picker.click();
+            await sleep(400);
+          }
         }
-      }
-      if (!tool) {
-        const plus = document.querySelector('button[aria-label*="Add"], button[aria-label*="Attach"]');
-        if (plus && visible(plus)) {
-          plus.click();
-          await sleep(900);
-          tool = findBtn(['Videos', 'Video']);
+        // 3. Open the "Create video" tool (Chat fallback only).
+        progress(jobId, 'opening_tool', '');
+        let tool = findBtn(['Create video', 'Create videos', 'Veo']);
+        if (!tool) {
+          const toolsBtn = findBtn(['Tools', 'More options', 'More tools']);
+          if (toolsBtn) {
+            toolsBtn.click();
+            await sleep(900);
+            tool = findBtn(['Create video']);
+          }
         }
+        if (!tool) {
+          const plus = document.querySelector('button[aria-label*="Add"], button[aria-label*="Attach"]');
+          if (plus && visible(plus)) {
+            plus.click();
+            await sleep(900);
+            tool = findBtn(['Videos', 'Video']);
+          }
+        }
+        if (!tool) throw new Error('__notool__');
+        tool.click();
+        await sleep(1200);
       }
-      if (!tool) throw new Error('__notool__');
-      tool.click();
-      await sleep(1200);
-      // 4. Type the prompt (rich-text editor) and send.
+      // 3. Type the prompt (rich-text editor) and send.
       const editor = await waitFor(() => {
         const eds = [...document.querySelectorAll('div[contenteditable="true"], textarea')].filter(visible);
         return eds.length ? eds[eds.length - 1] : null;
       }, 15000, 'Prompt box pelam na.');
       editor.focus();
       let typed = false;
-      try { typed = document.execCommand('insertText', false, prompt); } catch (e) {}
+      try { typed = document.execCommand('insertText', false, sendText); } catch (e) {}
       if (!typed) {
-        editor.textContent = prompt;
+        editor.textContent = sendText;
         editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
       }
       await sleep(400);
-      const sendBtn = findBtn(['Send']) ||
+      const sendBtn = findBtn(['Send', 'Start task', 'Create task']) ||
         document.querySelector('button[type="submit"]') ||
         document.querySelector('button[aria-label*="Send"]');
       if (!sendBtn) throw new Error('__nosend__');
@@ -787,15 +872,28 @@ window.__aisTouchUI = true;
       // from an earlier turn is never mistaken for the new one.
       const seenSrcs = new Set([...document.querySelectorAll('video')].map((x) => x.src).filter(Boolean));
       sendBtn.click();
-      // 5. Wait for the finished video (up to 4 min).
+      // 4. Wait for the finished video. v90: Task mode-e agent age
+      // plan kore, tai wait 5.5 min; Chat-e 4 min (v89). Heartbeat
+      // every 30s, so the app can tell "driver alive, video slow"
+      // apart from "driver dead".
       progress(jobId, 'creating', '');
-      const found = await waitFor(() => {
+      const videoWaitMs = inTask ? 330000 : 240000;
+      const waitStart = Date.now();
+      const deadline = waitStart + videoWaitMs;
+      let lastBeat = 0;
+      let found = null;
+      while (Date.now() < deadline && !found) {
         const v = [...document.querySelectorAll('video')].find((x) => x.src && (x.src.startsWith('http') || x.src.startsWith('blob:')) && !seenSrcs.has(x.src));
-        if (v) return { el: v, url: v.src };
+        if (v) { found = { el: v, url: v.src }; break; }
         const a = [...document.querySelectorAll('a[href]')].find((x) => (/\.mp4(\?|$)/i.test(x.href) || /googlevideo\.com/i.test(x.href)) && !seenSrcs.has(x.href));
-        if (a) return { el: null, url: a.href };
-        return null;
-      }, 240000, 'Video toiri hoyni — limit sesh hote pare, ba Gemini error diyeche.');
+        if (a) { found = { el: null, url: a.href }; break; }
+        if (Date.now() - lastBeat > 30000) {
+          lastBeat = Date.now();
+          progress(jobId, 'creating', 'Video banacche… (' + Math.round((Date.now() - waitStart) / 1000) + 's)');
+        }
+        await sleep(500);
+      }
+      if (!found) throw new Error('Video toiri hoyni — limit sesh hote pare, ba Gemini error diyeche.');
       let url = found.url;
       let dataUrl = '';
       let durationSec = 0, width = 1620, height = 2880;
