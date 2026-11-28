@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- White tile behind the user-supplied MJ logo (red M + dark-grey J):
-         the J would vanish on the old dark #121216 background, so the
-         adaptive-icon background is white - the logo as supplied. -->
-    <color name="ai_studio_ic_background">#FFFFFF</color>
-</resources>
